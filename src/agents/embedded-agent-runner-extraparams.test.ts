@@ -321,6 +321,7 @@ import {
   resolvePreparedExtraParams,
 } from "./embedded-agent-runner/extra-params.js";
 import { log } from "./embedded-agent-runner/logger.js";
+import { FailoverError } from "./failover-error.js";
 
 type WrapProviderStreamFnParams = Parameters<
   typeof import("../plugins/provider-hook-runtime.js").wrapProviderStreamFn
@@ -1201,6 +1202,7 @@ describe("applyExtraParamsToAgent", () => {
         api: "openai-completions",
         provider: "nvidia-nim",
         id: "moonshotai/kimi-k2.5",
+        compat: { supportsParallelToolCallsControl: true },
       } as unknown as Model<"openai-completions">,
     });
 
@@ -1228,6 +1230,7 @@ describe("applyExtraParamsToAgent", () => {
         api: "openai-completions",
         provider: "openrouter",
         id: "openrouter/auto",
+        compat: { supportsParallelToolCallsControl: true },
       } as unknown as Model<"openai-completions">,
     });
 
@@ -1255,10 +1258,141 @@ describe("applyExtraParamsToAgent", () => {
         api: "openai-completions",
         provider: "openrouter",
         id: "openrouter/auto",
-      } as Model<"openai-completions">,
+        compat: { supportsParallelToolCallsControl: true },
+      } as unknown as Model<"openai-completions">,
     });
 
     expect(payload.parallel_tool_calls).toBe(false);
+  });
+
+  it("rejects an unverified strict serialization request before provider I/O", () => {
+    const baseStreamFn = vi.fn((() => ({}) as ReturnType<StreamFn>) as StreamFn);
+    const agent = { streamFn: baseStreamFn as StreamFn };
+    applyExtraParamsToAgent(
+      agent,
+      {
+        agents: {
+          defaults: {
+            models: {
+              "deepseek/deepseek-v4-pro": {
+                params: { parallel_tool_calls: false },
+              },
+            },
+          },
+        },
+      },
+      "deepseek",
+      "deepseek-v4-pro",
+    );
+    const model = {
+      api: "openai-completions",
+      provider: "deepseek",
+      id: "deepseek-v4-pro",
+    } as unknown as Model<"openai-completions">;
+
+    let error: unknown;
+    try {
+      agent.streamFn?.(model, { messages: [] }, {});
+    } catch (cause) {
+      error = cause;
+    }
+    expect(error).toBeInstanceOf(FailoverError);
+    expect(error).toMatchObject({
+      reason: "format",
+      code: "parallel_tool_calls_control_unverified",
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+    });
+    expect(baseStreamFn).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unsupported strict serialization request before provider I/O", () => {
+    const baseStreamFn = vi.fn((() => ({}) as ReturnType<StreamFn>) as StreamFn);
+    const agent = { streamFn: baseStreamFn as StreamFn };
+    applyExtraParamsToAgent(
+      agent,
+      {
+        agents: {
+          defaults: {
+            models: {
+              "deepseek/deepseek-v4-pro": {
+                params: { parallel_tool_calls: false },
+              },
+            },
+          },
+        },
+      },
+      "deepseek",
+      "deepseek-v4-pro",
+    );
+    const model = {
+      api: "openai-completions",
+      provider: "deepseek",
+      id: "deepseek-v4-pro",
+      compat: { supportsParallelToolCallsControl: false },
+    } as unknown as Model<"openai-completions">;
+
+    expect(() => agent.streamFn?.(model, { messages: [] }, {})).toThrow(
+      "parallel_tool_calls=false is unsupported for deepseek/deepseek-v4-pro api=openai-completions",
+    );
+    expect(baseStreamFn).not.toHaveBeenCalled();
+  });
+
+  it("rechecks the concrete fallback route capability before provider I/O", () => {
+    const baseStreamFn: StreamFn = (_model, _context, options) => {
+      options?.onPayload?.({}, _model);
+      return {} as ReturnType<StreamFn>;
+    };
+    const baseSpy = vi.fn(baseStreamFn);
+    const agent = { streamFn: baseSpy as StreamFn };
+    applyExtraParamsToAgent(agent, undefined, "openai", "primary", { parallelToolCalls: false });
+    const supported = {
+      api: "openai-completions",
+      provider: "openai",
+      id: "primary",
+      compat: { supportsParallelToolCallsControl: true },
+    } as unknown as Model<"openai-completions">;
+    const unsupportedFallback = {
+      api: "openai-completions",
+      provider: "deepseek",
+      id: "fallback",
+      compat: { supportsParallelToolCallsControl: false },
+    } as unknown as Model<"openai-completions">;
+
+    void agent.streamFn?.(supported, { messages: [] }, {});
+    expect(() => agent.streamFn?.(unsupportedFallback, { messages: [] }, {})).toThrow(
+      "parallel_tool_calls=false is unsupported for deepseek/fallback api=openai-completions",
+    );
+    expect(baseSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("reapplies strict serialization to an async replacement payload", async () => {
+    let observedOptions: Parameters<StreamFn>[2] | undefined;
+    const baseStreamFn: StreamFn = (_model, _context, options) => {
+      observedOptions = options;
+      return {} as ReturnType<StreamFn>;
+    };
+    const agent = { streamFn: baseStreamFn };
+    applyExtraParamsToAgent(agent, undefined, "openai", "strict", {
+      parallelToolCalls: false,
+    });
+    const model = {
+      api: "openai-completions",
+      provider: "openai",
+      id: "strict",
+      compat: { supportsParallelToolCallsControl: true },
+    } as unknown as Model<"openai-completions">;
+
+    void agent.streamFn?.(
+      model,
+      { messages: [] },
+      {
+        onPayload: async () => ({ marker: "replacement", parallel_tool_calls: true }),
+      },
+    );
+    const replacement = await observedOptions?.onPayload?.({}, model);
+
+    expect(replacement).toEqual({ marker: "replacement", parallel_tool_calls: false });
   });
 
   it("strips store from proxied openai-completions payloads", () => {
@@ -1700,7 +1834,8 @@ describe("applyExtraParamsToAgent", () => {
         api: "openai-completions",
         provider: "nvidia-nim",
         id: "moonshotai/kimi-k2.5",
-      } as Model<"openai-completions">,
+        compat: { supportsParallelToolCallsControl: true },
+      } as unknown as Model<"openai-completions">,
     });
 
     expect(payload.parallel_tool_calls).toBe(false);

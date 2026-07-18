@@ -352,6 +352,7 @@ function normalizeModelCatalogCompat(value: unknown): ModelCatalogCompatConfig |
   const compat: Record<string, unknown> = {};
   const booleanFields = [
     "supportsStore",
+    "supportsParallelToolCallsControl",
     "supportsPromptCacheKey",
     "supportsDeveloperRole",
     "supportsReasoningEffort",

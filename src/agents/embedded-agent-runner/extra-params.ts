@@ -35,6 +35,8 @@ import {
 } from "../../plugins/provider-hook-runtime.js";
 import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
 import { resolveModelExtraParamSources } from "../model-extra-params.js";
+import { FailoverError } from "../failover-error.js";
+import { resolveParallelToolCallsControlCapability } from "../model-tool-support.js";
 import { resolveProviderRequestPolicyConfig } from "../provider-request-config.js";
 import type { AgentRuntimeTransport } from "../runtime-plan/types.js";
 import type { StreamFn } from "../runtime/index.js";
@@ -683,12 +685,35 @@ function createParallelToolCallsWrapper(
     if (!supportsGptParallelToolCallsPayload(model.api)) {
       return underlying(model, context, options);
     }
-    log.debug(
-      `applying parallel_tool_calls=${enabled} for ${model.provider ?? "unknown"}/${model.id ?? "unknown"} api=${model.api}`,
+    const modelRef = `${model.provider ?? "unknown"}/${model.id ?? "unknown"}`;
+    if (!enabled) {
+      const capability = resolveParallelToolCallsControlCapability(model);
+      if (capability !== "supported") {
+        const capabilityLabel = capability === "unsupported" ? "unsupported" : "unverified";
+        throw new FailoverError(
+          `parallel_tool_calls=false is ${capabilityLabel} for ${modelRef} api=${model.api}; ` +
+            "select a route with compat.supportsParallelToolCallsControl=true or allow native parallel tool calls",
+          {
+            reason: "format",
+            code: `parallel_tool_calls_control_${capabilityLabel}`,
+            provider: model.provider,
+            model: model.id,
+          },
+        );
+      }
+    }
+    log.debug(`applying parallel_tool_calls=${enabled} for ${modelRef} api=${model.api}`);
+    return streamWithPayloadPatch(
+      underlying,
+      model,
+      context,
+      options,
+      (payloadObj) => {
+        payloadObj.parallel_tool_calls = enabled;
+      },
+      // Strict capability guarantees survive provider hooks that replace the request body.
+      { reapplyToReplacement: !enabled },
     );
-    return streamWithPayloadPatch(underlying, model, context, options, (payloadObj) => {
-      payloadObj.parallel_tool_calls = enabled;
-    });
   };
 }
 

@@ -414,6 +414,43 @@ describe("ModelRegistry models.json auth", () => {
     });
   });
 
+  it("preserves parallel-tool-call control compatibility from generated catalogs", () => {
+    const modelsPath = writeModelsJsonWithPluginCatalog({
+      root: { providers: {} },
+      pluginRelativePath: join("plugins", "strict-tools", PLUGIN_MODEL_CATALOG_FILE),
+      pluginCatalog: {
+        generatedBy: PLUGIN_MODEL_CATALOG_GENERATED_BY,
+        providers: {
+          "strict-tools": {
+            baseUrl: "https://strict-tools.example/v1",
+            api: "openai-completions",
+            apiKey: "test-token-placeholder",
+            models: [
+              {
+                id: "serial-native",
+                name: "Serial Native",
+                compat: { supportsParallelToolCallsControl: true },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const registry = ModelRegistry.create(
+      AuthStorage.inMemory({
+        "strict-tools": { type: "api_key", key: "test-token-placeholder" },
+      }),
+      modelsPath,
+      { pluginMetadataSnapshot: pluginOwnerSnapshot("strict-tools", "strict-tools") },
+    );
+
+    expect(registry.getError()).toBeUndefined();
+    expect(registry.find("strict-tools", "serial-native")?.compat).toMatchObject({
+      supportsParallelToolCallsControl: true,
+    });
+  });
+
   it("loads richer generated catalog metadata without widening runtime inputs", () => {
     // Generated catalogs can report video/audio support. Keep those rows while
     // projecting their metadata to the runtime execution contract.

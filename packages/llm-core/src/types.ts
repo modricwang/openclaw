@@ -433,6 +433,8 @@ export interface AssistantMessageEventStreamLike extends AsyncIterable<Assistant
 export interface OpenAICompletionsCompat {
   /** Whether the provider supports the `store` field. Default: auto-detected from URL. */
   supportsStore?: boolean;
+  /** Whether the concrete provider route natively honors `parallel_tool_calls: false`. */
+  supportsParallelToolCallsControl?: boolean;
   /** Whether the provider supports the `developer` role (vs `system`). Default: auto-detected from URL. */
   supportsDeveloperRole?: boolean;
   /** Whether the provider supports `reasoning_effort`. Default: auto-detected from URL. */

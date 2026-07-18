@@ -29,6 +29,7 @@ export type ModelApi = (typeof MODEL_APIS)[number];
 type SupportedOpenAICompatFields = Pick<
   OpenAICompletionsCompat,
   | "supportsStore"
+  | "supportsParallelToolCallsControl"
   | "supportsDeveloperRole"
   | "supportsReasoningEffort"
   | "supportsUsageInStreaming"

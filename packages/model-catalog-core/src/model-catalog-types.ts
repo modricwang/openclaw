@@ -39,6 +39,7 @@ export function isModelCatalogThinkingFormat(value: string): value is ModelCatal
 /** Compatibility flags and provider-specific routing metadata for one model. */
 export type ModelCatalogCompatConfig = {
   supportsStore?: boolean;
+  supportsParallelToolCallsControl?: boolean;
   supportsDeveloperRole?: boolean;
   supportsReasoningEffort?: boolean;
   /** Whether the model accepts the temperature parameter (GPT-5.6 family rejects it). */

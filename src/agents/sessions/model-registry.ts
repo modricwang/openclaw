@@ -104,6 +104,7 @@ const ThinkingLevelMapSchema = Type.Object({
 
 const OpenAICompletionsCompatSchema = Type.Object({
   supportsStore: Type.Optional(Type.Boolean()),
+  supportsParallelToolCallsControl: Type.Optional(Type.Boolean()),
   supportsDeveloperRole: Type.Optional(Type.Boolean()),
   supportsReasoningEffort: Type.Optional(Type.Boolean()),
   supportsUsageInStreaming: Type.Optional(Type.Boolean()),

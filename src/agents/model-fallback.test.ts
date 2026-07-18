@@ -2,6 +2,8 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
+import type { StreamFn } from "openclaw/plugin-sdk/agent-core";
+import type { Model } from "openclaw/plugin-sdk/llm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptNotContinuableError } from "../../packages/agent-core/src/errors.js";
 import type { OpenClawConfig } from "../config/config.js";
@@ -20,6 +22,7 @@ import { loadPluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.
 import { AUTH_STORE_VERSION } from "./auth-profiles/constants.js";
 import type { AuthProfileStore } from "./auth-profiles/types.js";
 import { testing as cliBackendsTesting } from "./cli-backends.test-support.js";
+import { applyExtraParamsToAgent } from "./embedded-agent-runner/extra-params.js";
 import { classifyEmbeddedAgentRunResultForModelFallback } from "./embedded-agent-runner/result-fallback-classifier.js";
 import { abortable } from "./embedded-agent-runner/run/abortable.js";
 import type { EmbeddedAgentRunResult } from "./embedded-agent-runner/types.js";
@@ -633,6 +636,57 @@ describe("runWithModelFallback", () => {
     expect(result).toBe(expectError ? undefined : "ok");
     expect(isFallbackSummaryError(thrown)).toBe(expectError);
     expect(diagnostics.events).toMatchObject(expectedEvents);
+  });
+
+  it("does not downgrade strict parallel-tool-call control onto a fallback", async () => {
+    const cfg = makeCfg({
+      agents: {
+        defaults: {
+          model: {
+            primary: "deepseek/deepseek-v4-pro",
+            fallbacks: ["openai/gpt-5.5"],
+          },
+          models: {
+            "deepseek/deepseek-v4-pro": {
+              params: { parallel_tool_calls: false },
+            },
+          },
+        },
+      },
+    });
+    const providerIo = vi.fn((() => ({}) as ReturnType<StreamFn>) as StreamFn);
+    const run = vi.fn(async (provider: string, model: string) => {
+      const agent = { streamFn: providerIo as StreamFn };
+      applyExtraParamsToAgent(agent, cfg, provider, model);
+      const runtimeModel = {
+        api: "openai-completions",
+        provider,
+        id: model,
+        ...(provider === "openai" ? { compat: { supportsParallelToolCallsControl: true } } : {}),
+      } as unknown as Model<"openai-completions">;
+      void agent.streamFn?.(runtimeModel, { messages: [] }, {});
+      return `${provider}/${model}`;
+    });
+
+    await expect(
+      runWithModelFallback({
+        cfg,
+        provider: "deepseek",
+        model: "deepseek-v4-pro",
+        run,
+      }),
+    ).rejects.toMatchObject({
+      name: "FailoverError",
+      reason: "format",
+      code: "parallel_tool_calls_control_unverified",
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+    });
+
+    expect(run.mock.calls).toEqual([
+      ["deepseek", "deepseek-v4-pro", { isFinalFallbackAttempt: false }],
+    ]);
+    expect(providerIo).not.toHaveBeenCalled();
   });
 
   it("does not replay a thrown attempt after the caller reports a committed side effect", async () => {

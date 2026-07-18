@@ -1840,6 +1840,9 @@ async function runWithModelFallbackInternal<T>(
     if (findCliMaxTurnsError(err)) {
       throw err;
     }
+    if (isFailoverError(err) && err.code?.startsWith("parallel_tool_calls_control_")) {
+      throw err;
+    }
     if (
       !attemptRun.classifiedResult &&
       params.canFallbackAfterError &&

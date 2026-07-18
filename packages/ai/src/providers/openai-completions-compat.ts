@@ -4,7 +4,7 @@ type OpenAICompletionsSessionAffinity = "none" | "openai" | "openrouter";
 
 export type ResolvedOpenAICompletionsCompat = Omit<
   Required<OpenAICompletionsCompat>,
-  "cacheControlFormat" | "openRouterRouting" | "sendSessionAffinityHeaders"
+  "cacheControlFormat" | "openRouterRouting" | "sendSessionAffinityHeaders" | "supportsParallelToolCallsControl"
 > & {
   cacheControlFormat?: OpenAICompletionsCompat["cacheControlFormat"];
   openRouterRouting?: OpenAICompletionsCompat["openRouterRouting"];

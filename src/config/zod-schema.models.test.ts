@@ -133,4 +133,47 @@ describe("ModelsConfigSchema", () => {
 
     expect(result.success).toBe(true);
   });
+
+  it.each([true, false])(
+    "accepts compat.supportsParallelToolCallsControl=%s",
+    (supportsParallelToolCallsControl) => {
+      const result = ModelsConfigSchema.safeParse({
+        providers: {
+          "openai-compatible": {
+            baseUrl: "https://example.com/v1",
+            api: "openai-completions",
+            models: [
+              {
+                id: "tool-model",
+                name: "Tool Model",
+                compat: { supportsParallelToolCallsControl },
+              },
+            ],
+          },
+        },
+      });
+
+      expect(result.success).toBe(true);
+    },
+  );
+
+  it("rejects a non-boolean parallel tool-call control capability", () => {
+    const result = ModelsConfigSchema.safeParse({
+      providers: {
+        "openai-compatible": {
+          baseUrl: "https://example.com/v1",
+          api: "openai-completions",
+          models: [
+            {
+              id: "tool-model",
+              name: "Tool Model",
+              compat: { supportsParallelToolCallsControl: "unknown" },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
 });
