@@ -172,7 +172,8 @@ export function readPluginSdkSurfaceBudgets(env = process.env) {
       // +1: canonical unknown-value to Error coercion.
       // +6: canonical session delivery normalization, access, and projection helpers.
       // +5: focused media-local-roots helpers and typed hook media contracts.
-      4716,
+      // +1: typed owner-required error for session store path resolution.
+      4717,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
