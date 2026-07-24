@@ -4,7 +4,10 @@
  * Runs the configured runtime provider and returns normalized cached search results.
  */
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { assertSecretOwnerAvailable } from "../../secrets/runtime-degraded-state.js";
+import {
+  assertSecretOwnerAvailable,
+  findActiveDegradedSecretOwner,
+} from "../../secrets/runtime-degraded-state.js";
 import { runtimeWebSecretOwnerId } from "../../secrets/runtime-web-secret-owner.js";
 import type { RuntimeWebSearchMetadata } from "../../secrets/runtime-web-tools.types.js";
 import { runWebSearch } from "../../web-search/runtime.js";
@@ -77,7 +80,7 @@ function isWebSearchDisabled(config?: OpenClawConfig): boolean {
   return Boolean(search && typeof search === "object" && search.enabled === false);
 }
 
-/** Creates the `web_search` tool, or `null` when web search is disabled by config. */
+/** Creates the `web_search` tool, or `null` when web search is disabled or its credential is unavailable. */
 export function createWebSearchTool(options?: {
   config?: OpenClawConfig;
   agentDir?: string;
@@ -86,6 +89,21 @@ export function createWebSearchTool(options?: {
   lateBindRuntimeConfig?: boolean;
 }): AnyAgentTool | null {
   if (isWebSearchDisabled(options?.config)) {
+    return null;
+  }
+
+  // Registration-time capability preflight: hide the tool from the model when
+  // the resolved provider credential is known-degraded. This prevents the model
+  // from selecting a tool that would deterministically fail at execution time.
+  const { providerSelectionId } = resolveWebSearchToolRuntimeContext({
+    config: options?.config,
+    lateBindRuntimeConfig: options?.lateBindRuntimeConfig,
+    runtimeWebSearch: options?.runtimeWebSearch,
+  });
+  if (
+    providerSelectionId &&
+    findActiveDegradedSecretOwner("capability", runtimeWebSecretOwnerId("search", providerSelectionId))
+  ) {
     return null;
   }
 

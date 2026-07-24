@@ -15,7 +15,10 @@ import { resolveWebProviderConfig } from "../../../packages/web-content-core/src
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { SsrFBlockedError, type LookupFn, type SsrFPolicy } from "../../infra/net/ssrf.js";
 import { logDebug } from "../../logger.js";
-import { assertSecretOwnerAvailable } from "../../secrets/runtime-degraded-state.js";
+import {
+  assertSecretOwnerAvailable,
+  findActiveDegradedSecretOwner,
+} from "../../secrets/runtime-degraded-state.js";
 import { runtimeWebSecretOwnerId } from "../../secrets/runtime-web-secret-owner.js";
 import type { RuntimeWebFetchMetadata } from "../../secrets/runtime-web-tools.types.js";
 import { wrapExternalContent, wrapWebContent } from "../../security/external-content.js";
@@ -830,6 +833,20 @@ export function createWebFetchTool(options?: {
 }): AnyAgentTool | null {
   const fetch = resolveFetchConfig(options?.config);
   if (!resolveFetchEnabled({ fetch, sandboxed: options?.sandboxed })) {
+    return null;
+  }
+
+  // Registration-time capability preflight: hide the tool from the model when
+  // the resolved provider credential is known-degraded.
+  const { providerSelectionId } = resolveWebFetchToolRuntimeContext({
+    config: options?.config,
+    lateBindRuntimeConfig: options?.lateBindRuntimeConfig,
+    runtimeWebFetch: options?.runtimeWebFetch,
+  });
+  if (
+    providerSelectionId &&
+    findActiveDegradedSecretOwner("capability", runtimeWebSecretOwnerId("fetch", providerSelectionId))
+  ) {
     return null;
   }
   const tool: AnyAgentTool = {

@@ -177,7 +177,7 @@ describe("web_search late-bound runtime fallback", () => {
     expect(mocks.runWebSearch).not.toHaveBeenCalled();
   });
 
-  it("returns typed unavailability for only the isolated search provider", async () => {
+  it("hides the tool from the model when the search provider credential is degraded", () => {
     setActiveDegradedSecretOwners([
       {
         ownerKind: "capability",
@@ -192,14 +192,27 @@ describe("web_search late-bound runtime fallback", () => {
       config: { tools: { web: { search: { provider: "brave" } } } },
     });
 
-    await expect(
-      tool?.execute("call-search", { query: "openclaw" }, undefined),
-    ).rejects.toMatchObject({
-      name: "SecretSurfaceUnavailableError",
-      code: "SECRET_SURFACE_UNAVAILABLE",
-      ownerKind: "capability",
-      ownerId: "web-search:brave",
-    });
+    // Registration-time preflight: tool is not projected to the model.
+    expect(tool).toBeNull();
     expect(mocks.runWebSearch).not.toHaveBeenCalled();
+  });
+
+  it("still registers the tool when a different provider credential is degraded", () => {
+    setActiveDegradedSecretOwners([
+      {
+        ownerKind: "capability",
+        ownerId: "web-search:perplexity",
+        state: "unavailable",
+        paths: ["plugins.entries.perplexity.config.apiKey"],
+        refKeys: ["env:default:MISSING_PERPLEXITY_KEY"],
+        reason: "missing test ref",
+      },
+    ]);
+    const tool = createWebSearchTool({
+      config: { tools: { web: { search: { provider: "brave" } } } },
+    });
+
+    // Only the matching provider credential blocks registration.
+    expect(tool).not.toBeNull();
   });
 });
