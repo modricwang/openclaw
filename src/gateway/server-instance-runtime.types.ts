@@ -15,6 +15,13 @@ export type GatewayRecoveryRuntime = {
     params: Record<string, unknown>,
     timeoutMs?: number,
   ) => Promise<T>;
+  /** ISSUE-0111: Trigger an immediate heartbeat catch-up wake after restart recovery. */
+  triggerHeartbeatCatchUp?: (params: {
+    sessionKey: string;
+    slotId: string;
+    phaseAtInterrupt: string;
+    attempt: number;
+  }) => Promise<void>;
 };
 
 export type GatewayInstanceRuntime = {

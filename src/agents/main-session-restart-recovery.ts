@@ -74,6 +74,7 @@ import {
   resumeMainSession,
 } from "./main-session-restart-dispatch.js";
 import { tombstoneMainRestartRecoveryWithNotice } from "./main-session-restart-recovery-failure.js";
+import { checkHeartbeatPendingSlot } from "./main-session-restart-heartbeat-slot.js";
 import { resolveAgentSessionDirs } from "./session-dirs.js";
 import type { SessionLockInspection } from "./session-write-lock.js";
 import { isAgentToolReplaySafe } from "./tool-replay-safety.js";
@@ -1837,6 +1838,53 @@ async function recoverStore(params: {
         storePath: params.storePath,
       });
       result[disposition]++;
+      continue;
+    }
+
+    // ISSUE-0111: Heartbeat pending slot typed branch.
+    // If a heartbeat poll was interrupted by restart, handle it via the
+    // owner-state substrate instead of generic transcript resume.
+    const heartbeatSlotDecision = checkHeartbeatPendingSlot();
+    if (heartbeatSlotDecision.action === "catch_up") {
+      log.info(
+        `heartbeat slot catch-up: ${heartbeatSlotDecision.slotId} phase=${heartbeatSlotDecision.phaseAtInterrupt} elapsed=${heartbeatSlotDecision.elapsedMs}ms`,
+      );
+      // Trigger an immediate heartbeat wake via the cron scheduler.
+      // The heartbeat pipeline will read recovery_queued from owner_state
+      // and inject the restart_recovery typed fact into compact_facts.
+      try {
+        await params.gatewayRuntime.triggerHeartbeatCatchUp?.({
+          sessionKey,
+          slotId: heartbeatSlotDecision.slotId,
+          phaseAtInterrupt: heartbeatSlotDecision.phaseAtInterrupt,
+          attempt: heartbeatSlotDecision.attempt,
+        });
+        params.resumedSessionKeys.add(resumeDedupeKey);
+        result.recovered++;
+      } catch (err) {
+        log.warn(`heartbeat catch-up trigger failed for ${sessionKey}: ${String(err)}`);
+        result.failed++;
+      }
+      continue;
+    }
+    if (heartbeatSlotDecision.action === "terminal") {
+      log.info(
+        `heartbeat slot terminal: ${heartbeatSlotDecision.slotId} outcome=${heartbeatSlotDecision.outcome}`,
+      );
+      // Slot expired or recovery exhausted; write receipt already done.
+      // Do NOT send generic resume; the heartbeat will naturally fire on next schedule.
+      params.resumedSessionKeys.add(resumeDedupeKey);
+      result.skipped++;
+      continue;
+    }
+    if (heartbeatSlotDecision.action === "delivery_owned") {
+      log.info(
+        `heartbeat slot delivery-owned: ${heartbeatSlotDecision.slotId}; deferring to delivery reconciliation`,
+      );
+      // Hand to delivery reconciliation (ISSUE-0088 boundary).
+      // Do NOT run model catch-up.
+      params.resumedSessionKeys.add(resumeDedupeKey);
+      result.skipped++;
       continue;
     }
 
