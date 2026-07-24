@@ -1,5 +1,6 @@
 // Builds field-level capability change summaries for Claw update previews.
 import { createHash } from "node:crypto";
+import { listAgentEntries, toAgentEntriesRecord } from "../agents/agent-scope.js";
 import { resolveSandboxConfigForAgent } from "../agents/sandbox/config.js";
 import { stableStringify } from "../agents/stable-stringify.js";
 import { parseDurationMs } from "../cli/parse-duration.js";
@@ -248,11 +249,29 @@ type AgentConfig = NonNullable<NonNullable<OpenClawConfig["agents"]>["list"]>[nu
 
 function resolveHeartbeat(config: OpenClawConfig, agentId: string): unknown {
   const defaults = config.agents?.defaults?.heartbeat;
-  const overrides = config.agents?.list?.find((agent) => agent.id === agentId)?.heartbeat;
+  const overrides = listAgentEntries(config).find((agent) => agent.id === agentId)?.heartbeat;
   return {
     ...defaults,
     ...overrides,
     every: resolveHeartbeatSummaryForAgent(config, agentId).every,
+  };
+}
+
+function prepareCapabilityComparisonConfig(
+  config: OpenClawConfig,
+  entries: AgentConfig[],
+  preferredDefaultAgentId: string,
+): OpenClawConfig {
+  const hasDefault = entries.some((entry) => entry.default === true);
+  const comparisonEntries = hasDefault
+    ? entries
+    : entries.map((entry) =>
+        entry.id === preferredDefaultAgentId ? { ...entry, default: true } : entry,
+      );
+  const { list: _legacyList, ...agents } = config.agents ?? {};
+  return {
+    ...config,
+    agents: { ...agents, entries: toAgentEntriesRecord(comparisonEntries) },
   };
 }
 
@@ -262,7 +281,7 @@ export function pushResolvedAgentCapabilityChanges(params: {
   config: OpenClawConfig;
   desiredAgent: AgentConfig;
 }): void {
-  const currentAgents = params.config.agents?.list ?? [];
+  const currentAgents = listAgentEntries(params.config);
   const currentIndex = currentAgents.findIndex((agent) => agent.id === params.agentId);
   const currentAgent = currentIndex === -1 ? undefined : currentAgents[currentIndex];
   const desiredAgents = [...currentAgents];
@@ -271,23 +290,26 @@ export function pushResolvedAgentCapabilityChanges(params: {
   } else {
     desiredAgents[currentIndex] = params.desiredAgent;
   }
-  const desiredConfig: OpenClawConfig = {
-    ...params.config,
-    agents: {
-      ...params.config.agents,
-      list: desiredAgents,
-    },
-  };
+  const currentConfig = prepareCapabilityComparisonConfig(
+    params.config,
+    currentAgents,
+    params.agentId,
+  );
+  const desiredConfig = prepareCapabilityComparisonConfig(
+    params.config,
+    desiredAgents,
+    params.agentId,
+  );
   pushAgentCapabilityChanges({
     changes: params.changes,
     agentId: params.agentId,
     currentAgent,
     desiredAgent: params.desiredAgent,
     currentSandbox: currentAgent
-      ? resolveSandboxConfigForAgent(params.config, params.agentId)
+      ? resolveSandboxConfigForAgent(currentConfig, params.agentId)
       : undefined,
     desiredSandbox: resolveSandboxConfigForAgent(desiredConfig, params.agentId),
-    currentHeartbeat: currentAgent ? resolveHeartbeat(params.config, params.agentId) : undefined,
+    currentHeartbeat: currentAgent ? resolveHeartbeat(currentConfig, params.agentId) : undefined,
     desiredHeartbeat: resolveHeartbeat(desiredConfig, params.agentId),
   });
 }
