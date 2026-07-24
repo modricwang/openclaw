@@ -595,6 +595,9 @@ export const vi: TranslationMap = {
     worktreeName: "Tên worktree",
     worktreeNamePlaceholder: "auto",
     worktreeNameInvalid: "Tên worktree dùng chữ cái viết thường, chữ số và dấu gạch nối.",
+    incognito: "Ẩn danh",
+    incognitoDescription: "Chỉ giữ luồng này cho đến khi Gateway khởi động lại",
+    startAsDraft: "Bắt đầu dưới dạng bản nháp",
     messagePlaceholder: "Phiên này nên làm việc gì?",
     readingAttachment: "Đang đọc tệp đính kèm",
     start: "Bắt đầu phiên",
@@ -616,7 +619,8 @@ export const vi: TranslationMap = {
     limit: "Giới hạn",
     filters: "Bộ lọc",
     createdBy: "Được tạo bởi {name}",
-    filterByCreator: "Lọc theo người tạo",
+    archivedBy: "Đã lưu trữ bởi {name}",
+    people: "Mọi người",
     allCreators: "Tất cả mọi người",
     filterControls: "Bộ lọc phiên",
     sourceFilters: "Bộ lọc nguồn phiên",
@@ -675,6 +679,8 @@ export const vi: TranslationMap = {
     openWorkboardCard: "Mở thẻ Workboard",
     dashboardAvailable: "Bảng điều khiển khả dụng",
     approvalNeeded: "Cần phê duyệt",
+    queuedMessage: "{count} tin nhắn đang chờ gửi",
+    queuedMessages: "{count} tin nhắn đang chờ gửi",
     noSessions: "Không tìm thấy phiên nào.",
     noActiveSessions: "Không có luồng đang hoạt động.",
     noArchivedSessions: "Không có phiên đã lưu trữ.",
@@ -742,6 +748,7 @@ export const vi: TranslationMap = {
     unread: "Unread",
     worktreeSession: "Worktree session",
     automationAttached: "Automation attached",
+    incognito: "Luồng ẩn danh",
     cloudWorkerPlacement: "Worker đám mây: {state}",
     cloudWorkerPlacementConflict: "Cloud worker: {state} · 1 xung đột không gian làm việc",
     cloudWorkerPlacementConflicts: "Cloud worker: {state} · {count} xung đột không gian làm việc",
@@ -1399,6 +1406,11 @@ export const vi: TranslationMap = {
     chatPrefs: {
       title: "Trò chuyện",
       hint: "Tùy chọn trò chuyện cục bộ trên trình duyệt.",
+      messageWidth: "Chiều rộng tin nhắn",
+      messageWidthHint:
+        "Chiều rộng CSS tùy chọn cho bản ghi được căn giữa, chẳng hạn như 960px, 82% hoặc min(1280px, 82%).",
+      messageWidthInvalid:
+        "Nhập chiều rộng CSS như 960px, 82%, min(1280px, 82%) hoặc calc(100% - 2rem).",
     },
     sidebarPrefs: {
       title: "Thanh bên",
@@ -1687,6 +1699,7 @@ export const vi: TranslationMap = {
     blockedAgentFilter: "bị chặn bởi bộ lọc agent",
   },
   nav: {
+    account: "Tài khoản",
     back: "Quay lại",
     forward: "Tiến",
     chat: "Trò chuyện",
@@ -2411,6 +2424,8 @@ export const vi: TranslationMap = {
     toolRuns: "{count} lượt chạy",
     identity: {
       title: "Danh tính",
+      menuLabel: "Menu danh tính",
+      menuButtonLabel: "Menu danh tính và ứng dụng cho {name}",
       description: "Hồ sơ của bạn trên gateway này.",
       loading: "Đang tải danh tính của bạn…",
       profileUnavailable: "Không thể tải hồ sơ danh tính của bạn.",
@@ -3034,6 +3049,7 @@ export const vi: TranslationMap = {
     eventStale: "Phiên đã cũ",
   },
   connection: {
+    queuedCount: "{count} đang chờ",
     reconnecting: "Đang kết nối lại…",
     retryNow: "Thử lại ngay",
     access: {
@@ -3702,6 +3718,16 @@ export const vi: TranslationMap = {
   },
   login: {
     subtitle: "Bảng điều khiển Gateway",
+    deviceAuthMigration: {
+      banner: "Trình duyệt này vẫn cần phê duyệt thiết bị một lần sau khi cập nhật.",
+      action: "Bảo mật trình duyệt này",
+      secureContextRequired:
+        "Trình duyệt cũ này vẫn tạm thời khả dụng. Hãy mở lại qua HTTPS hoặc localhost để bảo mật bằng danh tính thiết bị.",
+      pendingUnavailable:
+        "Yêu cầu ghép nối trình duyệt chưa khả dụng. Vui lòng thử lại sau giây lát.",
+      loadFailed: "Không thể tải yêu cầu ghép nối của trình duyệt này: {error}",
+      approvalFailed: "Không thể bảo mật trình duyệt này: {error}",
+    },
     passwordPlaceholder: "tùy chọn",
     showToken: "Hiển thị token",
     hideToken: "Ẩn token",
@@ -3797,6 +3823,9 @@ export const vi: TranslationMap = {
   },
   chat: {
     disconnected: "Đã ngắt kết nối khỏi gateway.",
+    sendErrors: {
+      activeLeafChanged: "Luồng đã chuyển nhánh — xem lại và gửi lại.",
+    },
     waitingForApproval: "Đang chờ phê duyệt…",
     startupStatus: {
       preparingWorkspace: "Đang chuẩn bị không gian làm việc…",
@@ -3806,6 +3835,36 @@ export const vi: TranslationMap = {
     },
     outputTokens: "{count} token đầu ra",
     archivedSessionDisabled: "Khôi phục phiên này để gửi tin nhắn.",
+    sessionSharing: {
+      menu: "Chia sẻ luồng",
+      current: "Hiển thị luồng: {visibility}",
+      visibility: "Hiển thị",
+      shared: "Đã chia sẻ",
+      readOnly: "Chỉ đọc",
+      suggest: "Đề xuất",
+      draft: "Bản nháp",
+      publishDraft: "Xuất bản bản nháp",
+      members: "Thành viên",
+      selected: "Thành viên",
+      noPeople: "Không tìm thấy người đã ghép nối.",
+      readOnlyNotice: "Chỉ chủ luồng và thành viên mới có thể thao tác trong luồng này.",
+    },
+    sessionSuggestions: {
+      suggest: "Đề xuất",
+      suggestMessage: "Đề xuất tin nhắn",
+      attachmentsUnsupported: "Xóa tệp đính kèm trước khi gửi đề xuất văn bản.",
+      sendNow: "Gửi đề xuất của {author} ngay",
+      queue: "Xếp hàng đề xuất của {author}",
+      edit: "Chỉnh sửa đề xuất của {author}",
+      dismiss: "Bỏ qua đề xuất của {author}",
+      typing: "{name} đang nhập…",
+      typingMany: "{names} đang nhập…",
+      state: {
+        pending: "Đang chờ",
+        accepted: "Đã chấp nhận",
+        dismissed: "Đã bỏ qua",
+      },
+    },
     loadOlder: "Tải mục cũ hơn",
     sessionHeader: {
       renameTooltip: "Đổi tên phiên",
@@ -3819,6 +3878,7 @@ export const vi: TranslationMap = {
       copyPath: "Sao chép đường dẫn",
       copyBranch: "Sao chép tên nhánh",
       copied: "Đã sao chép",
+      incognito: "Cuộc trò chuyện ẩn danh",
       branches: "Nhánh luồng",
       branchSwitchUnavailable: "Không thể chuyển nhánh khi agent đang làm việc.",
       branchSwitchRequiresAdmin: "Chuyển nhánh yêu cầu quyền quản trị operator.",
@@ -4109,6 +4169,7 @@ export const vi: TranslationMap = {
       openInCanvas: "Mở trong canvas",
       reply: "Trả lời",
       replyToMessage: "Trả lời tin nhắn",
+      replyingTo: "Đang trả lời {name}",
       rewind: "Tua lại",
       rewindConfirm: "Tua lại về trước tin nhắn này?",
       rewindToHere: "Tua lại về đây",
@@ -4206,6 +4267,8 @@ export const vi: TranslationMap = {
       placeholderWithAttachments: "Add a message or paste more images...",
       placeholderDisconnected: "Connect to the gateway to start chatting...",
       offlineHint: "Ngoại tuyến — tin nhắn sẽ được xếp hàng và gửi khi kết nối trở lại.",
+      offlineQueuedHint:
+        "Ngoại tuyến — {count} đang chờ; tin nhắn sẽ được gửi khi kết nối trở lại.",
       preparingModel: "Đang chuẩn bị mô hình...",
       responding: "{name} đang phản hồi...",
       sendingMessage: "Đang gửi tin nhắn...",
