@@ -33,6 +33,7 @@ function makeToolRuntime(
     resultText?: string;
     diagnostics?: readonly McpToolCatalogDiagnostic[];
     supportsParallelToolCalls?: boolean;
+    runLifecycleControl?: boolean;
   } = {},
 ): SessionMcpRuntime {
   const serverName = params.serverName ?? "bundleProbe";
@@ -62,6 +63,7 @@ function makeToolRuntime(
           launchSummary: serverName,
           toolCount: tools.length,
           supportsParallelToolCalls: params.supportsParallelToolCalls ?? false,
+          runLifecycleControl: params.runLifecycleControl ?? false,
         },
       },
       tools,
@@ -76,6 +78,7 @@ function makeToolRuntime(
           launchSummary: serverName,
           toolCount: tools.length,
           supportsParallelToolCalls: params.supportsParallelToolCalls ?? false,
+          runLifecycleControl: params.runLifecycleControl ?? false,
         },
       },
       tools,
@@ -308,6 +311,168 @@ describe("createBundleMcpToolRuntime", () => {
         content: "pong",
       },
     });
+  });
+
+  it("consumes exact lifecycle envelopes only from an authorized sequential server", async () => {
+    const requiredEnvelope = {
+      run_lifecycle: {
+        contract_id: "openclaw_run_lifecycle_v1",
+        effect: "require_tool",
+        tool: "bundleProbe__bundle_probe",
+        required_arguments: {
+          action: "finalize_full_chain",
+          lock_id: "lock-1",
+        },
+      },
+    };
+    const untrusted = await materializeBundleMcpToolsForRun({
+      runtime: makeToolRuntime({
+        result: {
+          content: [],
+          structuredContent: { result: JSON.stringify(requiredEnvelope) },
+          isError: false,
+        },
+      }),
+    });
+    const untrustedResult = await expectDefined(
+      untrusted.tools[0],
+      "untrusted lifecycle test tool",
+    ).execute("call-untrusted", {}, undefined, undefined);
+    expect(untrustedResult.runLifecycle).toBeUndefined();
+
+    const trusted = await materializeBundleMcpToolsForRun({
+      runtime: makeToolRuntime({
+        runLifecycleControl: true,
+        supportsParallelToolCalls: true,
+        result: {
+          content: [],
+          structuredContent: { result: JSON.stringify(requiredEnvelope) },
+          isError: false,
+        },
+      }),
+    });
+    const trustedTool = expectDefined(trusted.tools[0], "trusted lifecycle test tool");
+    const trustedResult = await trustedTool.execute("call-trusted", {}, undefined, undefined);
+    expect(trustedTool.executionMode).toBe("sequential");
+    expect(trustedResult.runLifecycle).toEqual({
+      kind: "require_tool",
+      toolName: "bundleProbe__bundle_probe",
+      requiredArguments: {
+        action: "finalize_full_chain",
+        lock_id: "lock-1",
+      },
+    });
+  });
+
+  it("maps receipt-bound delivery and final-response lifecycle effects exactly", async () => {
+    const binding = {
+      owner_state: "delivered",
+      lock_id: "lock-1",
+      receipt_id: "receipt-1",
+      native_id: "native-1",
+      message_sha256: "message-sha",
+      route_hash: "route-sha",
+    };
+    const terminal = await materializeBundleMcpToolsForRun({
+      runtime: makeToolRuntime({
+        runLifecycleControl: true,
+        result: {
+          content: [],
+          structuredContent: {
+            result: JSON.stringify({
+              owner_state: binding.owner_state,
+              delivery_acknowledged: true,
+              terminal_boundary_armed: true,
+              terminal_boundary: {
+                profile: "heartbeat_outgoing_effect_boundary_v1",
+                armed: true,
+                lock_id: binding.lock_id,
+                heartbeat_delivery_receipt: {
+                  receipt_id: binding.receipt_id,
+                  native_id: binding.native_id,
+                  message_sha256: binding.message_sha256,
+                  route_hash: binding.route_hash,
+                },
+              },
+              run_lifecycle: {
+                contract_id: "openclaw_run_lifecycle_v1",
+                effect: "terminal_external_delivery",
+                binding,
+              },
+            }),
+          },
+          isError: false,
+        },
+      }),
+    });
+    const terminalResult = await expectDefined(
+      terminal.tools[0],
+      "terminal lifecycle test tool",
+    ).execute("call-terminal", {}, undefined, undefined);
+    expect(terminalResult.terminate).toBe(true);
+    expect(terminalResult.runLifecycle).toBeUndefined();
+
+    const mismatchedTerminal = await materializeBundleMcpToolsForRun({
+      runtime: makeToolRuntime({
+        runLifecycleControl: true,
+        result: {
+          content: [],
+          structuredContent: {
+            result: JSON.stringify({
+              owner_state: binding.owner_state,
+              delivery_acknowledged: true,
+              terminal_boundary_armed: true,
+              terminal_boundary: {
+                profile: "heartbeat_outgoing_effect_boundary_v1",
+                armed: true,
+                lock_id: binding.lock_id,
+                heartbeat_delivery_receipt: {
+                  receipt_id: binding.receipt_id,
+                  native_id: binding.native_id,
+                  message_sha256: "different-message",
+                  route_hash: binding.route_hash,
+                },
+              },
+              run_lifecycle: {
+                contract_id: "openclaw_run_lifecycle_v1",
+                effect: "terminal_external_delivery",
+                binding,
+              },
+            }),
+          },
+          isError: false,
+        },
+      }),
+    });
+    const mismatchedTerminalResult = await expectDefined(
+      mismatchedTerminal.tools[0],
+      "mismatched terminal lifecycle test tool",
+    ).execute("call-terminal-mismatch", {}, undefined, undefined);
+    expect(mismatchedTerminalResult.terminate).toBeUndefined();
+
+    const finalResponse = await materializeBundleMcpToolsForRun({
+      runtime: makeToolRuntime({
+        runLifecycleControl: true,
+        result: {
+          content: [],
+          structuredContent: {
+            result: JSON.stringify({
+              run_lifecycle: {
+                contract_id: "openclaw_run_lifecycle_v1",
+                effect: "final_response_only",
+              },
+            }),
+          },
+          isError: false,
+        },
+      }),
+    });
+    const finalResult = await expectDefined(
+      finalResponse.tools[0],
+      "final-response lifecycle test tool",
+    ).execute("call-final", {}, undefined, undefined);
+    expect(finalResult.runLifecycle).toEqual({ kind: "final_response_only" });
+    expect(finalResult.terminate).toBeUndefined();
   });
 
   it("coerces non-text/image MCP tool-result blocks to text (resource_link/resource/audio)", async () => {

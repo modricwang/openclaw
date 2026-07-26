@@ -29,6 +29,7 @@ import type {
   AgentEvent,
   AgentLoopConfig,
   AgentMessage,
+  AgentRunLifecycleDirective,
   AgentTool,
   AgentToolCall,
   AgentToolResult,
@@ -278,6 +279,10 @@ async function runLoop(
 ): Promise<void> {
   let currentContext = initialContext;
   let config = initialConfig;
+  let requiredToolLifecycle:
+    | Extract<AgentRunLifecycleDirective, { kind: "require_tool" }>
+    | undefined;
+  let finalResponseOnly = false;
   let firstTurn = true;
   let turnOpen = true;
   // Check for steering messages at start (user may have typed while waiting)
@@ -340,6 +345,8 @@ async function runLoop(
         return;
       }
 
+      const isFinalResponseOnlyTurn = finalResponseOnly;
+
       // Stream assistant response
       const message = await streamAssistantResponse(
         currentContext,
@@ -365,13 +372,15 @@ async function runLoop(
 
       const toolResults: ToolResultMessage[] = [];
       hasMoreToolCalls = false;
-      if (message.stopReason === "toolUse" && toolCalls.length > 0) {
-        const executedToolBatch = await executeToolCalls(
+      let executedToolBatch: ExecutedToolCallBatch | undefined;
+      if (!isFinalResponseOnlyTurn && message.stopReason === "toolUse" && toolCalls.length > 0) {
+        executedToolBatch = await executeToolCalls(
           currentContext,
           message,
           config,
           signal,
           emit,
+          requiredToolLifecycle,
         );
         toolResults.push(...executedToolBatch.messages);
         hasMoreToolCalls = !executedToolBatch.terminate;
@@ -386,6 +395,47 @@ async function runLoop(
       turnOpen = false;
       if (await stopIfAborted()) {
         return;
+      }
+      if (executedToolBatch?.terminate || isFinalResponseOnlyTurn) {
+        await emit({ type: "agent_end", messages: newMessages });
+        return;
+      }
+      if (executedToolBatch?.runLifecycle) {
+        const directive = executedToolBatch.runLifecycle;
+        if (directive.kind === "require_tool") {
+          const requiredTool = currentContext.tools?.find(
+            (tool) => tool.name === directive.toolName,
+          );
+          if (!requiredTool) {
+            finalResponseOnly = true;
+            requiredToolLifecycle = undefined;
+            currentContext = { ...currentContext, tools: [] };
+            config = Object.assign({}, config, { toolChoice: "none" as const });
+          } else {
+            requiredToolLifecycle = directive;
+            finalResponseOnly = false;
+            currentContext = { ...currentContext, tools: [requiredTool] };
+            config = Object.assign({}, config, { toolChoice: "required" as const });
+          }
+        } else {
+          requiredToolLifecycle = undefined;
+          finalResponseOnly = true;
+          currentContext = { ...currentContext, tools: [] };
+          config = Object.assign({}, config, { toolChoice: "none" as const });
+        }
+        // A lifecycle continuation belongs to the current tool result. Do not
+        // admit steering, follow-ups, or another runtime hook before it runs.
+        continue;
+      }
+      if (requiredToolLifecycle) {
+        // The required tool ran but did not produce another lifecycle edge.
+        // Close with one tool-free model-authored explanation instead of
+        // reopening the ordinary tool surface.
+        requiredToolLifecycle = undefined;
+        finalResponseOnly = true;
+        currentContext = { ...currentContext, tools: [] };
+        config = Object.assign({}, config, { toolChoice: "none" as const });
+        continue;
       }
 
       const nextTurnContext = {
@@ -566,6 +616,7 @@ async function executeToolCalls(
   config: AgentLoopConfig,
   signal: AbortSignal | undefined,
   emit: AgentEventSink,
+  requiredToolLifecycle?: Extract<AgentRunLifecycleDirective, { kind: "require_tool" }>,
 ): Promise<ExecutedToolCallBatch> {
   const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
   const resolvedToolCalls = new Map<AgentToolCall, ResolvedToolCallOutcome>();
@@ -598,6 +649,7 @@ async function executeToolCalls(
       config,
       signal,
       emit,
+      requiredToolLifecycle,
     );
   }
   return executeToolCallsParallel(
@@ -614,6 +666,7 @@ async function executeToolCalls(
 type ExecutedToolCallBatch = {
   messages: ToolResultMessage[];
   terminate: boolean;
+  runLifecycle?: AgentRunLifecycleDirective;
 };
 
 type ResolvedToolCallOutcome =
@@ -641,9 +694,12 @@ async function executeToolCallsSequential(
   config: AgentLoopConfig,
   signal: AbortSignal | undefined,
   emit: AgentEventSink,
+  requiredToolLifecycle?: Extract<AgentRunLifecycleDirective, { kind: "require_tool" }>,
 ): Promise<ExecutedToolCallBatch> {
   const finalizedCalls: FinalizedToolCallOutcome[] = [];
   const messages: ToolResultMessage[] = [];
+  let lifecycleFence: AgentRunLifecycleDirective | undefined;
+  let terminateFence = false;
 
   for (const toolCall of toolCalls) {
     const hideFromChannelProgress = hidesToolCallFromChannelProgress(
@@ -659,39 +715,59 @@ async function executeToolCallsSequential(
       ...(hideFromChannelProgress ? { hideFromChannelProgress: true } : {}),
     });
 
-    const preparation = await prepareToolCall(
-      currentContext,
-      assistantMessage,
-      toolCall,
-      config,
-      signal,
-      resolvedToolCalls,
-    );
     let finalized: FinalizedToolCallOutcome;
-    if (preparation.kind === "immediate") {
+    if (lifecycleFence || terminateFence) {
       finalized = {
         toolCall,
-        result: preparation.result,
-        isError: preparation.isError,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: "Tool execution skipped because an earlier tool result closed the current run lifecycle.",
+            },
+          ],
+          details: {},
+          ...(terminateFence ? { terminate: true } : {}),
+        },
+        isError: true,
         executionStarted: false,
-        ...(preparation.errorKind ? { errorKind: preparation.errorKind } : {}),
         ...(hideFromChannelProgress ? { hideFromChannelProgress: true } : {}),
       };
     } else {
-      const executed = await executePreparedToolCall(
-        preparation,
-        { assistantMessage, toolCall: preparation.toolCall },
-        signal,
-        emit,
-      );
-      finalized = await finalizeExecutedToolCall(
+      const preparation = await prepareToolCall(
         currentContext,
         assistantMessage,
-        preparation,
-        executed,
+        toolCall,
         config,
         signal,
+        resolvedToolCalls,
+        requiredToolLifecycle,
       );
+      if (preparation.kind === "immediate") {
+        finalized = {
+          toolCall,
+          result: preparation.result,
+          isError: preparation.isError,
+          executionStarted: false,
+          ...(preparation.errorKind ? { errorKind: preparation.errorKind } : {}),
+          ...(hideFromChannelProgress ? { hideFromChannelProgress: true } : {}),
+        };
+      } else {
+        const executed = await executePreparedToolCall(
+          preparation,
+          { assistantMessage, toolCall: preparation.toolCall },
+          signal,
+          emit,
+        );
+        finalized = await finalizeExecutedToolCall(
+          currentContext,
+          assistantMessage,
+          preparation,
+          executed,
+          config,
+          signal,
+        );
+      }
     }
 
     await emitToolExecutionEnd(finalized, emit);
@@ -699,6 +775,8 @@ async function executeToolCallsSequential(
     await emitToolResultMessage(toolResultMessage, emit);
     finalizedCalls.push(finalized);
     messages.push(toolResultMessage);
+    lifecycleFence ??= finalized.result.runLifecycle;
+    terminateFence ||= finalized.result.terminate === true;
 
     if (signal?.aborted) {
       break;
@@ -708,6 +786,7 @@ async function executeToolCallsSequential(
   return {
     messages,
     terminate: shouldTerminateToolBatch(finalizedCalls),
+    ...(lifecycleFence ? { runLifecycle: lifecycleFence } : {}),
   };
 }
 
@@ -797,6 +876,7 @@ async function executeToolCallsParallel(
   return {
     messages,
     terminate: shouldTerminateToolBatch(orderedFinalizedCalls),
+    ...resolveToolBatchRunLifecycle(orderedFinalizedCalls),
   };
 }
 
@@ -831,10 +911,56 @@ type FinalizedToolCallOutcome = {
 
 type FinalizedToolCallEntry = FinalizedToolCallOutcome | (() => Promise<FinalizedToolCallOutcome>);
 
+function resolveToolBatchRunLifecycle(
+  finalizedCalls: FinalizedToolCallOutcome[],
+): Pick<ExecutedToolCallBatch, "runLifecycle"> {
+  const directive = finalizedCalls.find((finalized) => finalized.result.runLifecycle !== undefined)
+    ?.result.runLifecycle;
+  return directive ? { runLifecycle: directive } : {};
+}
+
 function shouldTerminateToolBatch(finalizedCalls: FinalizedToolCallOutcome[]): boolean {
   return (
     finalizedCalls.length > 0 &&
     finalizedCalls.every((finalized) => finalized.result.terminate === true)
+  );
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isStructurallyEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) {
+    return true;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((entry, index) => isStructurallyEqual(entry, right[index]))
+    );
+  }
+  if (!isPlainRecord(left) || !isPlainRecord(right)) {
+    return false;
+  }
+  const leftKeys = Object.keys(left).toSorted();
+  const rightKeys = Object.keys(right).toSorted();
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key, index) => key === rightKeys[index] && isStructurallyEqual(left[key], right[key]),
+    )
+  );
+}
+
+function includesRequiredArguments(actual: unknown, required: Record<string, unknown>): boolean {
+  if (!isPlainRecord(actual)) {
+    return false;
+  }
+  return Object.entries(required).every(
+    ([key, value]) => Object.hasOwn(actual, key) && isStructurallyEqual(actual[key], value),
   );
 }
 
@@ -903,6 +1029,7 @@ async function prepareToolCall(
   config: AgentLoopConfig,
   signal: AbortSignal | undefined,
   resolvedToolCalls: Map<AgentToolCall, ResolvedToolCallOutcome>,
+  requiredToolLifecycle?: Extract<AgentRunLifecycleDirective, { kind: "require_tool" }>,
 ): Promise<PreparedToolCall | ImmediateToolCallOutcome> {
   const resolution = await resolveToolCallTool(
     currentContext,
@@ -954,6 +1081,22 @@ async function prepareToolCall(
       result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
       isError: true,
       errorKind: "argument-validation",
+    };
+  }
+  if (
+    requiredToolLifecycle &&
+    (toolCall.name !== requiredToolLifecycle.toolName ||
+      !includesRequiredArguments(validatedArgs, requiredToolLifecycle.requiredArguments))
+  ) {
+    return {
+      kind: "immediate",
+      result: {
+        ...createErrorToolResult(
+          "Tool call did not match the required run-lifecycle tool and locked arguments.",
+        ),
+        runLifecycle: { kind: "final_response_only" },
+      },
+      isError: true,
     };
   }
 

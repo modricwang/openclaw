@@ -66,6 +66,7 @@ type BundleMcpSession = {
   transportType: "stdio" | "sse" | "streamable-http";
   requestTimeoutMs: number;
   supportsParallelToolCalls: boolean;
+  runLifecycleControl: boolean;
   connected: boolean;
   disconnectReason?: string;
   retiring: boolean;
@@ -656,6 +657,8 @@ export function createSessionMcpRuntime(params: {
                   transportType: resolved.transportType,
                   requestTimeoutMs: resolved.requestTimeoutMs,
                   supportsParallelToolCalls: resolved.supportsParallelToolCalls,
+                  runLifecycleControl:
+                    isMcpConfigRecord(rawServer) && rawServer.runLifecycleControl === true,
                   connected: false,
                   retiring: false,
                   catalogUseCount: 0,
@@ -706,6 +709,8 @@ export function createSessionMcpRuntime(params: {
                   toolCount: exposedTools.length,
                   requestTimeoutMs: resolved.requestTimeoutMs,
                   supportsParallelToolCalls: resolved.supportsParallelToolCalls,
+                  runLifecycleControl:
+                    isMcpConfigRecord(rawServer) && rawServer.runLifecycleControl === true,
                   ...(capabilities.resources ? { resources: capabilities.resources } : {}),
                   ...(capabilities.prompts ? { prompts: capabilities.prompts } : {}),
                   ...(capabilities.tools

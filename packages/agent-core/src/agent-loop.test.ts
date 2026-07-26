@@ -1450,6 +1450,240 @@ describe("agentLoop tool termination", () => {
     expect(events.at(-1)).toMatchObject({ type: "agent_end" });
   });
 
+  it("fences later calls in the same sequential batch and skips queued follow-ups after termination", async () => {
+    const executed: string[] = [];
+    let streamCalls = 0;
+    let followUpPolls = 0;
+    const delivery: AgentTool = {
+      ...makeTool("delivery", executed),
+      executionMode: "sequential",
+      execute: async () => {
+        executed.push("delivery");
+        return {
+          content: [{ type: "text", text: "delivered" }],
+          details: {},
+          terminate: true,
+        };
+      },
+    };
+    const streamFn: StreamFn = () => {
+      streamCalls += 1;
+      const stream = createAssistantMessageEventStream();
+      queueMicrotask(() => {
+        const message = makeAssistantMessage([
+          { type: "toolCall", id: "call-delivery", name: "delivery", arguments: {} },
+          { type: "toolCall", id: "call-tail", name: "tail", arguments: {} },
+        ]);
+        stream.push({ type: "done", reason: "toolUse", message });
+        stream.end();
+      });
+      return stream;
+    };
+
+    const events = await collectEvents(
+      agentLoop(
+        [{ role: "user", content: "deliver", timestamp: 1 }],
+        {
+          systemPrompt: "",
+          messages: [],
+          tools: [delivery, makeTool("tail", executed)],
+        },
+        {
+          ...config,
+          getFollowUpMessages: async () => {
+            followUpPolls += 1;
+            return [{ role: "user", content: "queued", timestamp: 2 }];
+          },
+        },
+        undefined,
+        streamFn,
+      ),
+    );
+
+    expect(streamCalls).toBe(1);
+    expect(followUpPolls).toBe(0);
+    expect(executed).toEqual(["delivery"]);
+    expect(
+      events
+        .filter((event) => event.type === "tool_execution_end")
+        .map((event) => event.executionStarted),
+    ).toEqual([true, false]);
+    expect(events.at(-1)).toMatchObject({ type: "agent_end" });
+  });
+
+  it("runs one exact required-tool continuation without admitting tail tools or steering", async () => {
+    const executed: string[] = [];
+    let streamCalls = 0;
+    let steeringPolls = 0;
+    const prepare: AgentTool = {
+      ...makeTool("prepare", executed),
+      executionMode: "sequential",
+      execute: async () => {
+        executed.push("prepare");
+        return {
+          content: [{ type: "text", text: "prepared" }],
+          details: {},
+          runLifecycle: {
+            kind: "require_tool",
+            toolName: "finalize",
+            requiredArguments: {
+              action: "finalize_full_chain",
+              lock_id: "lock-1",
+            },
+          },
+        };
+      },
+    };
+    const finalize: AgentTool = {
+      name: "finalize",
+      label: "finalize",
+      description: "finalize",
+      executionMode: "sequential",
+      parameters: Type.Object(
+        {
+          action: Type.String(),
+          lock_id: Type.String(),
+          authored_text: Type.String(),
+        },
+        { additionalProperties: false },
+      ),
+      execute: async () => {
+        executed.push("finalize");
+        return {
+          content: [{ type: "text", text: "delivered" }],
+          details: {},
+          terminate: true,
+        };
+      },
+    };
+    const streamFn: StreamFn = (_model, context, options) => {
+      streamCalls += 1;
+      const stream = createAssistantMessageEventStream();
+      queueMicrotask(() => {
+        if (streamCalls === 1) {
+          const message = makeAssistantMessage([
+            { type: "toolCall", id: "call-prepare", name: "prepare", arguments: {} },
+            { type: "toolCall", id: "call-tail", name: "tail", arguments: {} },
+          ]);
+          stream.push({ type: "done", reason: "toolUse", message });
+        } else {
+          expect(context.tools?.map((tool) => tool.name)).toEqual(["finalize"]);
+          expect((options as { toolChoice?: unknown } | undefined)?.toolChoice).toBe("required");
+          const message = makeAssistantMessage([
+            {
+              type: "toolCall",
+              id: "call-finalize",
+              name: "finalize",
+              arguments: {
+                action: "finalize_full_chain",
+                lock_id: "lock-1",
+                authored_text: "model-owned",
+              },
+            },
+          ]);
+          stream.push({ type: "done", reason: "toolUse", message });
+        }
+        stream.end();
+      });
+      return stream;
+    };
+
+    await collectEvents(
+      agentLoop(
+        [{ role: "user", content: "heartbeat", timestamp: 1 }],
+        {
+          systemPrompt: "",
+          messages: [],
+          tools: [prepare, finalize, makeTool("tail", executed)],
+        },
+        {
+          ...config,
+          getSteeringMessages: async () => {
+            steeringPolls += 1;
+            return [];
+          },
+        },
+        undefined,
+        streamFn,
+      ),
+    );
+
+    expect(streamCalls).toBe(2);
+    expect(steeringPolls).toBe(1);
+    expect(executed).toEqual(["prepare", "finalize"]);
+  });
+
+  it("allows one tool-free model-authored final response and then ends the run", async () => {
+    const executed: string[] = [];
+    let streamCalls = 0;
+    let followUpPolls = 0;
+    const nutrition: AgentTool = {
+      ...makeTool("nutrition", executed),
+      executionMode: "sequential",
+      execute: async () => {
+        executed.push("nutrition");
+        return {
+          content: [{ type: "text", text: "committed" }],
+          details: {},
+          runLifecycle: { kind: "final_response_only" },
+        };
+      },
+    };
+    const streamFn: StreamFn = (_model, context, options) => {
+      streamCalls += 1;
+      const stream = createAssistantMessageEventStream();
+      queueMicrotask(() => {
+        const message =
+          streamCalls === 1
+            ? makeAssistantMessage([
+                { type: "toolCall", id: "call-nutrition", name: "nutrition", arguments: {} },
+              ])
+            : makeAssistantMessage([{ type: "text", text: "已经按回执记好了。" }]);
+        if (streamCalls === 2) {
+          expect(context.tools).toEqual([]);
+          expect((options as { toolChoice?: unknown } | undefined)?.toolChoice).toBe("none");
+        }
+        stream.push({
+          type: "done",
+          reason: message.stopReason === "toolUse" ? "toolUse" : "stop",
+          message,
+        });
+        stream.end();
+      });
+      return stream;
+    };
+
+    const events = await collectEvents(
+      agentLoop(
+        [{ role: "user", content: "record meal", timestamp: 1 }],
+        { systemPrompt: "", messages: [], tools: [nutrition, makeTool("tail", executed)] },
+        {
+          ...config,
+          getFollowUpMessages: async () => {
+            followUpPolls += 1;
+            return [{ role: "user", content: "queued", timestamp: 2 }];
+          },
+        },
+        undefined,
+        streamFn,
+      ),
+    );
+
+    expect(streamCalls).toBe(2);
+    expect(followUpPolls).toBe(0);
+    expect(executed).toEqual(["nutrition"]);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "message_end" &&
+          event.message.role === "assistant" &&
+          event.message.content.some(
+            (content) => content.type === "text" && content.text === "已经按回执记好了。",
+          ),
+      ),
+    ).toBe(true);
+  });
+
   it("does not request another model turn after a tool aborts the run", async () => {
     const controller = new AbortController();
     let streamCalls = 0;

@@ -144,6 +144,11 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
   model: Model;
   /** Logical thinking level retained across model changes before provider mapping. */
   thinkingLevel?: ThinkingLevel;
+  /**
+   * Provider-neutral tool-choice mode for the current turn.
+   * The agent loop uses only modes shared by the maintained provider adapters.
+   */
+  toolChoice?: "auto" | "none" | "required" | "any";
 
   /**
    * Converts AgentMessage[] to LLM-compatible Message[] before each LLM call.
@@ -437,6 +442,20 @@ export interface AgentToolProgress {
   id?: string;
 }
 
+/**
+ * Internal control-plane instruction produced by a trusted tool result.
+ * It is never rendered as user-facing content and never carries semantic prose.
+ */
+export type AgentRunLifecycleDirective =
+  | {
+      kind: "require_tool";
+      toolName: string;
+      requiredArguments: Record<string, unknown>;
+    }
+  | {
+      kind: "final_response_only";
+    };
+
 /** Final or partial result produced by a tool. */
 export interface AgentToolResult<T> {
   /** Text or image content returned to the model. */
@@ -450,6 +469,8 @@ export interface AgentToolResult<T> {
    * Early termination only happens when every finalized tool result in the batch sets this to true.
    */
   terminate?: boolean;
+  /** Trusted internal continuation/terminal control consumed by the current agent run. */
+  runLifecycle?: AgentRunLifecycleDirective;
 }
 
 /** Callback used by tools to stream partial execution updates. */

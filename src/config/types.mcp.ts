@@ -42,6 +42,11 @@ export type McpServerConfig = {
   requestTimeoutMs?: number;
   /** Whether this server can safely handle concurrent tool calls. */
   supportsParallelToolCalls?: boolean;
+  /**
+   * Trust this server to emit the exact versioned OpenClaw run-lifecycle control envelope.
+   * Lifecycle-authorized servers are always materialized with sequential tool execution.
+   */
+  runLifecycleControl?: boolean;
   /** HTTP OAuth mode. Tokens are stored in OpenClaw state, not in config. */
   auth?: "oauth";
   /** Optional OAuth client metadata overrides for HTTP MCP servers. */

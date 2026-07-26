@@ -1,6 +1,7 @@
 /** Materializes configured MCP catalog entries into agent tools and runtime helpers. */
 import crypto from "node:crypto";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { AgentRunLifecycleDirective } from "@openclaw/agent-core";
 import { normalizeToolParameterSchema } from "@openclaw/ai/internal/openai";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -91,6 +92,7 @@ function toAgentToolResult(params: {
   serverName: string;
   toolName: string;
   result: CallToolResult;
+  allowRunLifecycleControl: boolean;
 }): AgentToolResult<unknown> {
   const content: AgentToolResult<unknown>["content"] = Array.isArray(params.result.content)
     ? params.result.content.map(mcpContentBlockToAgentContent)
@@ -135,7 +137,106 @@ function toAgentToolResult(params: {
   return {
     content: normalizedContent,
     details,
+    ...resolveTrustedRunLifecycleControl({
+      structuredContent: params.result.structuredContent,
+      isError: params.result.isError === true,
+      allowed: params.allowRunLifecycleControl,
+    }),
   };
+}
+
+const RUN_LIFECYCLE_CONTRACT_ID = "openclaw_run_lifecycle_v1";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function structuredResultPayload(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const carried = value.result;
+  if (isRecord(carried)) {
+    return carried;
+  }
+  if (typeof carried === "string") {
+    try {
+      const parsed = JSON.parse(carried);
+      return isRecord(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return value;
+}
+
+function resolveTrustedRunLifecycleControl(params: {
+  structuredContent: unknown;
+  isError: boolean;
+  allowed: boolean;
+}): Pick<AgentToolResult<unknown>, "runLifecycle" | "terminate"> {
+  if (!params.allowed || params.isError) {
+    return {};
+  }
+  const payload = structuredResultPayload(params.structuredContent);
+  const action = isRecord(payload?.action) ? payload.action : undefined;
+  const envelope = payload?.run_lifecycle ?? action?.run_lifecycle;
+  if (!isRecord(envelope) || envelope.contract_id !== RUN_LIFECYCLE_CONTRACT_ID) {
+    return {};
+  }
+  if (envelope.effect === "require_tool") {
+    const toolName = envelope.tool;
+    const requiredArguments = envelope.required_arguments;
+    if (typeof toolName !== "string" || !toolName.trim() || !isRecord(requiredArguments)) {
+      return {};
+    }
+    const runLifecycle: AgentRunLifecycleDirective = {
+      kind: "require_tool",
+      toolName,
+      requiredArguments,
+    };
+    return { runLifecycle };
+  }
+  if (envelope.effect === "final_response_only") {
+    return { runLifecycle: { kind: "final_response_only" } };
+  }
+  if (envelope.effect === "terminal_external_delivery") {
+    const binding = envelope.binding;
+    const terminalBoundary = payload?.terminal_boundary;
+    const deliveryReceipt = isRecord(terminalBoundary)
+      ? terminalBoundary.heartbeat_delivery_receipt
+      : undefined;
+    const bindingKeys = [
+      "lock_id",
+      "message_sha256",
+      "native_id",
+      "owner_state",
+      "receipt_id",
+      "route_hash",
+    ];
+    if (
+      !isRecord(binding) ||
+      !isRecord(terminalBoundary) ||
+      !isRecord(deliveryReceipt) ||
+      Object.keys(binding).length !== bindingKeys.length ||
+      !bindingKeys.every((key) => Object.hasOwn(binding, key)) ||
+      (binding.owner_state !== "delivered" && binding.owner_state !== "reused_delivered") ||
+      payload?.owner_state !== binding.owner_state ||
+      payload?.delivery_acknowledged !== true ||
+      payload?.terminal_boundary_armed !== true ||
+      terminalBoundary.profile !== "heartbeat_outgoing_effect_boundary_v1" ||
+      terminalBoundary.armed !== true ||
+      terminalBoundary.lock_id !== binding.lock_id ||
+      deliveryReceipt.receipt_id !== binding.receipt_id ||
+      deliveryReceipt.native_id !== binding.native_id ||
+      deliveryReceipt.message_sha256 !== binding.message_sha256 ||
+      deliveryReceipt.route_hash !== binding.route_hash
+    ) {
+      return {};
+    }
+    return { terminate: true };
+  }
+  return {};
 }
 
 function toJsonAgentToolResult(params: {
@@ -280,7 +381,9 @@ export function buildBundleMcpToolsFromCatalog(params: {
     }
     const server = params.catalog.servers[tool.serverName];
     const executionMode: AnyAgentTool["executionMode"] =
-      server?.supportsParallelToolCalls === true ? "parallel" : "sequential";
+      server?.supportsParallelToolCalls === true && server.runLifecycleControl !== true
+        ? "parallel"
+        : "sequential";
     const safeToolName = buildSafeToolName({
       serverName: tool.safeServerName,
       toolName: originalName,
@@ -433,6 +536,7 @@ export async function materializeBundleMcpToolsForRun(params: {
         serverName: tool.serverName,
         toolName: tool.toolName,
         result,
+        allowRunLifecycleControl: catalog.servers[tool.serverName]?.runLifecycleControl === true,
       });
       // Requester-scoped servers never mint app views (outlive run; no requester id on view boundary).
       const scopedServer = params.runtime.isRequesterScopedServer?.(tool.serverName) === true;

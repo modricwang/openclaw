@@ -303,6 +303,7 @@ const McpServerSchema = z
     connectionTimeoutMs: z.number().finite().positive().optional(),
     requestTimeoutMs: z.number().finite().positive().optional(),
     supportsParallelToolCalls: z.boolean().optional(),
+    runLifecycleControl: z.boolean().optional(),
     auth: z.literal("oauth").optional(),
     oauth: z
       .strictObject({
