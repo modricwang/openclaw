@@ -1426,6 +1426,8 @@ export async function runMemoryFlushIfNeeded(params: {
           memoryFlushWritePath,
           prompt: activeMemoryFlushPlan.prompt,
           transcriptPrompt: "",
+          suppressNextUserMessagePersistence: true,
+          suppressTranscriptOnlyAssistantPersistence: true,
           extraSystemPrompt: flushSystemPrompt,
           isFinalFallbackAttempt: runOptions.isFinalFallbackAttempt,
           bootstrapPromptWarningSignaturesSeen,

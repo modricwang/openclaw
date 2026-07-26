@@ -138,6 +138,8 @@ type EmbeddedAgentParams = {
   authProfileIdSource?: unknown;
   prompt?: string;
   transcriptPrompt?: string;
+  suppressNextUserMessagePersistence?: boolean;
+  suppressTranscriptOnlyAssistantPersistence?: boolean;
   memoryFlushWritePath?: string;
   silentExpected?: boolean;
   extraSystemPrompt?: string;
@@ -401,6 +403,8 @@ describe("runMemoryFlushIfNeeded", () => {
     expect(flushCall.prompt).toContain("Pre-compaction memory flush.");
     expect(flushCall.transcriptPrompt).toBe("");
     expect(flushCall.prompt).not.toBe(flushCall.transcriptPrompt);
+    expect(flushCall.suppressNextUserMessagePersistence).toBe(true);
+    expect(flushCall.suppressTranscriptOnlyAssistantPersistence).toBe(true);
     expect(flushCall.memoryFlushWritePath).toMatch(/^memory\/\d{4}-\d{2}-\d{2}\.md$/);
     expect(flushCall.silentExpected).toBe(true);
     expect(ensureMemoryFlushTargetFileMock).toHaveBeenCalledWith({
@@ -2897,6 +2901,8 @@ describe("runMemoryFlushIfNeeded", () => {
     expect(flushCall.prompt).toContain("NO_REPLY");
     expect(flushCall.prompt).toContain("MEMORY.md");
     expect(flushCall.transcriptPrompt).toBe("");
+    expect(flushCall.suppressNextUserMessagePersistence).toBe(true);
+    expect(flushCall.suppressTranscriptOnlyAssistantPersistence).toBe(true);
     expect(flushCall.extraSystemPrompt).toContain("extra system");
     expect(flushCall.extraSystemPrompt).toContain("Flush memory now.");
     expect(flushCall.memoryFlushWritePath).toBe("memory/2023-11-14.md");
