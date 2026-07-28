@@ -281,12 +281,28 @@ async function runLoop(
   let config = initialConfig;
   let requiredToolLifecycle:
     | Extract<AgentRunLifecycleDirective, { kind: "require_tool" }>
-    | undefined;
+    | undefined = initialConfig.initialRunLifecycle;
   let finalResponseOnly = false;
   let firstTurn = true;
   let turnOpen = true;
   // Check for steering messages at start (user may have typed while waiting)
   let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
+  if (requiredToolLifecycle) {
+    const requiredTool = currentContext.tools?.find(
+      (tool) => tool.name === requiredToolLifecycle?.toolName,
+    );
+    if (!requiredTool) {
+      throw new Error(
+        `Required initial run-lifecycle tool "${requiredToolLifecycle.toolName}" is unavailable.`,
+      );
+    }
+    currentContext = { ...currentContext, tools: [requiredTool] };
+    config = Object.assign({}, config, {
+      toolChoice: "required" as const,
+      toolExecution: "sequential" as const,
+      initialRunLifecycle: undefined,
+    });
+  }
   const stopIfAborted = async (): Promise<boolean> => {
     if (!signal?.aborted) {
       return false;
@@ -369,6 +385,16 @@ async function runLoop(
 
       // Only completed toolUse turns dispatch; length/stop can carry partial stream blocks.
       const toolCalls = message.content.filter((c) => c.type === "toolCall");
+      if (
+        requiredToolLifecycle?.violationMode === "fail_run" &&
+        (message.stopReason !== "toolUse" ||
+          toolCalls.length !== 1 ||
+          message.content.some((content) => content.type === "text"))
+      ) {
+        throw new Error(
+          `Required initial run-lifecycle tool "${requiredToolLifecycle.toolName}" was not executed successfully.`,
+        );
+      }
 
       const toolResults: ToolResultMessage[] = [];
       hasMoreToolCalls = false;
@@ -395,6 +421,14 @@ async function runLoop(
       turnOpen = false;
       if (await stopIfAborted()) {
         return;
+      }
+      if (
+        requiredToolLifecycle?.violationMode === "fail_run" &&
+        executedToolBatch?.requiredToolSatisfied !== true
+      ) {
+        throw new Error(
+          `Required initial run-lifecycle tool "${requiredToolLifecycle.toolName}" was not executed successfully.`,
+        );
       }
       if (executedToolBatch?.terminate || isFinalResponseOnlyTurn) {
         await emit({ type: "agent_end", messages: newMessages });
@@ -640,7 +674,7 @@ async function executeToolCalls(
       }
     }
   }
-  if (config.toolExecution === "sequential" || hasSequentialToolCall) {
+  if (requiredToolLifecycle || config.toolExecution === "sequential" || hasSequentialToolCall) {
     return executeToolCallsSequential(
       currentContext,
       assistantMessage,
@@ -667,6 +701,7 @@ type ExecutedToolCallBatch = {
   messages: ToolResultMessage[];
   terminate: boolean;
   runLifecycle?: AgentRunLifecycleDirective;
+  requiredToolSatisfied?: boolean;
 };
 
 type ResolvedToolCallOutcome =
@@ -786,6 +821,16 @@ async function executeToolCallsSequential(
   return {
     messages,
     terminate: shouldTerminateToolBatch(finalizedCalls),
+    ...(requiredToolLifecycle
+      ? {
+          requiredToolSatisfied: finalizedCalls.some(
+            (finalized) =>
+              finalized.toolCall.name === requiredToolLifecycle.toolName &&
+              finalized.executionStarted &&
+              !finalized.isError,
+          ),
+        }
+      : {}),
     ...(lifecycleFence ? { runLifecycle: lifecycleFence } : {}),
   };
 }
@@ -1094,7 +1139,9 @@ async function prepareToolCall(
         ...createErrorToolResult(
           "Tool call did not match the required run-lifecycle tool and locked arguments.",
         ),
-        runLifecycle: { kind: "final_response_only" },
+        ...(requiredToolLifecycle.violationMode === "fail_run"
+          ? { terminate: true }
+          : { runLifecycle: { kind: "final_response_only" as const } }),
       },
       isError: true,
     };

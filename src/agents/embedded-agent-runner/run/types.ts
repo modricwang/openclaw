@@ -45,6 +45,8 @@ type EmbeddedRunAttemptBase = Omit<
   | "lane"
   | "enqueue"
   | "sessionFile"
+  | "mcpPrivateRequestMetaByServer"
+  | "initialRunLifecycle"
 >;
 
 type EmbeddedRunContextWindowInfo = {
@@ -95,6 +97,10 @@ export type EmbeddedRunAttemptTrajectoryRecorder = {
 };
 
 export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
+  /** Required seam: private MCP metadata may be absent, but it may not be silently dropped. */
+  mcpPrivateRequestMetaByServer: RunEmbeddedAgentParams["mcpPrivateRequestMetaByServer"];
+  /** Required seam: the initial lifecycle fence may be absent, but it must be propagated explicitly. */
+  initialRunLifecycle: RunEmbeddedAgentParams["initialRunLifecycle"];
   /** Sticky operation identity used to suppress ordinary retry and hook policy. */
   operation?: EmbeddedRunAttemptOperation;
   preparedModelRuntime?: PreparedModelRuntimeSnapshot;

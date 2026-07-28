@@ -356,6 +356,8 @@ export async function dispatchEmbeddedRunAttempt(input: {
     bootstrapContextRunKind: params.bootstrapContextRunKind,
     jobId: params.jobId,
     toolsAllow: params.toolsAllow,
+    mcpPrivateRequestMetaByServer: params.mcpPrivateRequestMetaByServer,
+    initialRunLifecycle: params.initialRunLifecycle,
     ...(params.systemAgentTool ? { systemAgentTool: params.systemAgentTool } : {}),
     cleanupBundleMcpOnRunEnd: params.cleanupBundleMcpOnRunEnd,
     disableMessageTool: params.disableMessageTool,

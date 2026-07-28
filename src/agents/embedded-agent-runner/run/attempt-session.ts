@@ -156,6 +156,7 @@ export async function prepareEmbeddedAttemptAgentSession(input: {
           return hydratedTool;
         }
       : undefined,
+    initialRunLifecycle: attempt.initialRunLifecycle,
     withSessionWriteLock: (operation) =>
       input.sessionLockController.withSessionWriteLock(operation),
   };

@@ -98,6 +98,7 @@ export async function prepareEmbeddedAttemptBundleTools(params: {
   const bundleMcpRuntime = bundleMcpSessionRuntime
     ? await materializeBundleMcpToolsForRun({
         runtime: bundleMcpSessionRuntime,
+        privateRequestMetaByServer: params.attempt.mcpPrivateRequestMetaByServer,
         reservedToolNames: [
           ...tools.map((tool) => tool.name),
           ...(clientTools?.map((tool) => tool.function.name) ?? []),

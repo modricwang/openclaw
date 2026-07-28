@@ -77,6 +77,26 @@ export type McpRequestOptions = {
   failureBackoff?: "track" | "ignore";
 };
 
+/** Host-issued external-user turn identity carried only in MCP request metadata. */
+export type TrustedUserTurnReceipt = {
+  schemaVersion: 1;
+  actor: "user";
+  sourceTurnId: string;
+  runId: string;
+  sessionId: string;
+  sessionKey?: string;
+  channel: {
+    provider?: string;
+    conversationId?: string;
+  };
+  observedAtMs: number;
+};
+
+/** Run-scoped private MCP metadata, partitioned by exact configured server name. */
+export type McpPrivateRequestMetaByServer = Readonly<
+  Record<string, Readonly<Record<string, unknown>>>
+>;
+
 /** Trusted requester identity used to scope per-user MCP connections. */
 export type SessionMcpRequesterScope = {
   requesterSenderId: string;
@@ -113,7 +133,12 @@ export type SessionMcpRuntime = {
   /** Returns the cached catalog only; must not start runtimes, connect transports, or issue tools/list. */
   peekCatalog: () => McpToolCatalog | null;
   markUsed: () => void;
-  callTool: (serverName: string, toolName: string, input: unknown) => Promise<CallToolResult>;
+  callTool: (
+    serverName: string,
+    toolName: string,
+    input: unknown,
+    options?: { requestMeta?: Readonly<Record<string, unknown>> },
+  ) => Promise<CallToolResult>;
   listTools?: (serverName: string, params?: { cursor?: string }) => Promise<ListToolsResult>;
   listResources?: (serverName: string, options?: McpRequestOptions) => Promise<unknown>;
   readResource?: (serverName: string, uri: string, options?: McpRequestOptions) => Promise<unknown>;

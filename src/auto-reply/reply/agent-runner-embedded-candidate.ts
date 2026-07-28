@@ -1,4 +1,5 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import type { TrustedUserTurnReceipt } from "../../agents/agent-bundle-mcp-types.js";
 import { resolveBootstrapWarningSignaturesSeen } from "../../agents/bootstrap-budget.js";
 import type { BootstrapContextRunKind } from "../../agents/bootstrap-mode.js";
 import type { RunEmbeddedAgentParams } from "../../agents/embedded-agent-runner/run/params.js";
@@ -134,6 +135,32 @@ export async function runEmbeddedFallbackCandidate(params: {
       : undefined);
   const messageActionCapabilitySessionKey =
     turn.runtimePolicySessionKey ?? embeddedContext.sessionKey;
+  const trustedUserConversationId =
+    embeddedContext.currentMessagingTarget ?? embeddedContext.currentChannelId;
+  const trustedUserTurnReceipt: TrustedUserTurnReceipt | undefined =
+    isTrustedMessageActionTurnIngress(turn.sessionCtx.Provider) &&
+    !turn.isHeartbeat &&
+    embeddedContext.currentSourceTurnId &&
+    embeddedContext.messageProvider &&
+    trustedUserConversationId &&
+    turn.sessionCtx.InputProvenance?.kind !== "inter_session" &&
+    turn.sessionCtx.InputProvenance?.kind !== "internal_system"
+      ? Object.freeze({
+          schemaVersion: 1,
+          actor: "user",
+          sourceTurnId: embeddedContext.currentSourceTurnId,
+          runId: params.runId,
+          sessionId: embeddedContext.sessionId,
+          ...(messageActionCapabilitySessionKey
+            ? { sessionKey: messageActionCapabilitySessionKey }
+            : {}),
+          channel: Object.freeze({
+            provider: embeddedContext.messageProvider,
+            conversationId: trustedUserConversationId,
+          }),
+          observedAtMs: Date.now(),
+        })
+      : undefined;
   const messageActionTurnCapability =
     isTrustedMessageActionTurnIngress(turn.sessionCtx.Provider) &&
     !turn.isHeartbeat &&
@@ -233,6 +260,14 @@ export async function runEmbeddedFallbackCandidate(params: {
         suppressToolErrorWarnings:
           turn.opts?.shouldSuppressToolErrorWarnings ?? turn.opts?.suppressToolErrorWarnings,
         toolsAllow: turn.opts?.toolsAllow,
+        mcpPrivateRequestMetaByServer: trustedUserTurnReceipt
+          ? {
+              model_front_door: {
+                "openclaw/trusted-user-turn": trustedUserTurnReceipt,
+              },
+            }
+          : undefined,
+        initialRunLifecycle: turn.opts?.initialRunLifecycle,
         disableTools: turn.opts?.disableTools,
         enableHeartbeatTool: turn.opts?.enableHeartbeatTool,
         forceHeartbeatTool: turn.opts?.forceHeartbeatTool,

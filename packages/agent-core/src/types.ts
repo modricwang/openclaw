@@ -145,6 +145,11 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
   /** Logical thinking level retained across model changes before provider mapping. */
   thinkingLevel?: ThinkingLevel;
   /**
+   * Trusted one-shot lifecycle fence applied before the first provider request.
+   * This is host control-plane state and must never be derived from model text.
+   */
+  initialRunLifecycle?: Extract<AgentRunLifecycleDirective, { kind: "require_tool" }>;
+  /**
    * Provider-neutral tool-choice mode for the current turn.
    * The agent loop uses only modes shared by the maintained provider adapters.
    */
@@ -451,6 +456,11 @@ export type AgentRunLifecycleDirective =
       kind: "require_tool";
       toolName: string;
       requiredArguments: Record<string, unknown>;
+      /**
+       * Existing tool-issued continuations may fall back to one tool-free explanation.
+       * Host-issued initial fences can instead fail the run on any protocol violation.
+       */
+      violationMode?: "final_response_only" | "fail_run";
     }
   | {
       kind: "final_response_only";

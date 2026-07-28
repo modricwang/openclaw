@@ -1406,6 +1406,8 @@ export async function createContextEngineAttemptRunner(params: {
       thinkLevel: "off",
       disableTools: true,
       disableMessageTool: true,
+      mcpPrivateRequestMetaByServer: undefined,
+      initialRunLifecycle: undefined,
       contextTokenBudget: 2048,
       contextEngine: {
         ...contextEngineRest,

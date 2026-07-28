@@ -921,7 +921,7 @@ export function createSessionMcpRuntime(params: {
     markUsed() {
       lastUsedAt = Date.now();
     },
-    async callTool(serverName, toolName, input) {
+    async callTool(serverName, toolName, input, options) {
       failIfDisposed();
       await getCatalog();
       const session = requireConnectedSession(serverName);
@@ -932,6 +932,7 @@ export function createSessionMcpRuntime(params: {
             {
               name: toolName,
               arguments: isMcpConfigRecord(input) ? input : {},
+              ...(options?.requestMeta ? { _meta: options.requestMeta } : {}),
             },
             undefined,
             { timeout: session.requestTimeoutMs },

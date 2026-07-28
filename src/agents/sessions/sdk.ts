@@ -106,6 +106,8 @@ export interface CreateAgentSessionOptions {
   customTools?: ToolDefinition[];
   /** Hydrate an authorized tool deferred out of the current provider-visible tool set. */
   resolveDeferredTool?: AgentOptions["resolveDeferredTool"];
+  /** Trusted one-shot lifecycle fence applied before the first provider request. */
+  initialRunLifecycle?: AgentOptions["initialRunLifecycle"];
 
   /** Resource loader. When omitted, DefaultResourceLoader is used. */
   resourceLoader?: ResourceLoader;
@@ -519,6 +521,7 @@ async function createAgentSessionImpl(
       return runner.emitContext(messages);
     },
     resolveDeferredTool: options.resolveDeferredTool,
+    initialRunLifecycle: options.initialRunLifecycle,
     prepareNextTurnWithContext: createSessionPrepareNextTurnWithContext(() => agent),
     steeringMode: settingsManager.getSteeringMode(),
     followUpMode: settingsManager.getFollowUpMode(),

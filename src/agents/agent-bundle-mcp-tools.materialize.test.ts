@@ -143,6 +143,111 @@ describe("createBundleMcpToolRuntime", () => {
     ).toEqual(["demo__model_tool"]);
   });
 
+  it("sends private request metadata only to its exact configured MCP server", async () => {
+    const calls: Array<{
+      serverName: string;
+      toolName: string;
+      input: unknown;
+      options: unknown;
+    }> = [];
+    const tools: McpCatalogTool[] = [
+      {
+        serverName: "model_front_door",
+        safeServerName: "model_front_door",
+        toolName: "manage_laundry",
+        inputSchema: {
+          type: "object",
+          properties: { action: { type: "string" } },
+          required: ["action"],
+          additionalProperties: false,
+        },
+        fallbackDescription: "laundry",
+      },
+      {
+        serverName: "third_party",
+        safeServerName: "third_party",
+        toolName: "observe",
+        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        fallbackDescription: "observe",
+      },
+    ];
+    const runtime = makeToolRuntime({ tools, serverName: "model_front_door" });
+    const catalog = {
+      version: 1 as const,
+      generatedAt: 0,
+      servers: {
+        model_front_door: {
+          serverName: "model_front_door",
+          launchSummary: "model_front_door",
+          toolCount: 1,
+        },
+        third_party: {
+          serverName: "third_party",
+          launchSummary: "third_party",
+          toolCount: 1,
+        },
+      },
+      tools,
+    };
+    runtime.getCatalog = async () => catalog;
+    runtime.peekCatalog = () => catalog;
+    runtime.callTool = async (serverName, toolName, input, options) => {
+      calls.push({ serverName, toolName, input, options });
+      return { content: [{ type: "text", text: "ok" }], isError: false };
+    };
+    const receipt = Object.freeze({
+      schemaVersion: 1,
+      actor: "user",
+      sourceTurnId: "turn-2",
+      runId: "run-2",
+      sessionId: "session-1",
+      sessionKey: "agent:main:main",
+      channel: Object.freeze({
+        provider: "telegram",
+        conversationId: "chat-1",
+      }),
+      observedAtMs: 2,
+    });
+    const materialized = await materializeBundleMcpToolsForRun({
+      runtime,
+      privateRequestMetaByServer: {
+        model_front_door: {
+          "openclaw/trusted-user-turn": receipt,
+        },
+      },
+    });
+
+    await materialized.tools
+      .find((tool) => tool.name === "model_front_door__manage_laundry")
+      ?.execute("call-1", { action: "start" }, undefined, undefined);
+    await materialized.tools
+      .find((tool) => tool.name === "third_party__observe")
+      ?.execute("call-2", {}, undefined, undefined);
+
+    expect(calls).toEqual([
+      {
+        serverName: "model_front_door",
+        toolName: "manage_laundry",
+        input: { action: "start" },
+        options: {
+          requestMeta: {
+            "openclaw/trusted-user-turn": receipt,
+          },
+        },
+      },
+      {
+        serverName: "third_party",
+        toolName: "observe",
+        input: {},
+        options: {},
+      },
+    ]);
+    expect(
+      materialized.tools.find((tool) => tool.name === "model_front_door__manage_laundry")
+        ?.parameters,
+    ).not.toHaveProperty("properties.openclaw/trusted-user-turn");
+  });
+
   it("attaches app previews without converting typed image results to text", async () => {
     const tool: McpCatalogTool = {
       serverName: "demo",

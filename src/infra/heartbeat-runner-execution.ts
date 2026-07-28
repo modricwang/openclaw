@@ -581,6 +581,33 @@ export type PreparedHeartbeatRun = StageResult<
   "ready"
 >;
 
+export function resolveHeartbeatInitialRunLifecycleOptions(params: {
+  wakeSource: HeartbeatWakeSource | undefined;
+  hasDueCommitments: boolean;
+  hasExecCompletion: boolean;
+  hasCronEvents: boolean;
+  usesHeartbeatResponseTool: boolean;
+}) {
+  if (
+    params.wakeSource !== "interval" ||
+    params.hasDueCommitments ||
+    params.hasExecCompletion ||
+    params.hasCronEvents ||
+    params.usesHeartbeatResponseTool
+  ) {
+    return {};
+  }
+  return {
+    toolsAllow: ["model_front_door__prepare_heartbeat"],
+    initialRunLifecycle: {
+      kind: "require_tool" as const,
+      toolName: "model_front_door__prepare_heartbeat",
+      requiredArguments: { action: "prepare" },
+      violationMode: "fail_run" as const,
+    },
+  };
+}
+
 export async function invokeHeartbeatAgentRun(
   opts: HeartbeatRunOptions,
   wake: ReadyHeartbeatWake,
@@ -603,6 +630,13 @@ export async function invokeHeartbeatAgentRun(
     ...(usesHeartbeatResponseTool ? { enableHeartbeatTool: true, forceHeartbeatTool: true } : {}),
     ...(usesHeartbeatResponseTool ? { sourceReplyDeliveryMode: "message_tool_only" as const } : {}),
     ...(hasDueCommitments ? { disableTools: true, skillFilter: [] } : {}),
+    ...resolveHeartbeatInitialRunLifecycleOptions({
+      wakeSource: wake.wakeSource,
+      hasDueCommitments,
+      hasExecCompletion,
+      hasCronEvents,
+      usesHeartbeatResponseTool,
+    }),
     // Heartbeat timeout is a per-run override so user turns keep the global default.
     timeoutOverrideSeconds: resolveHeartbeatTimeoutOverrideSeconds(cfg, heartbeat),
     bootstrapContextMode: heartbeat?.lightContext === true ? ("lightweight" as const) : undefined,

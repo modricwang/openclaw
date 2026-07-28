@@ -16,6 +16,7 @@ import {
 import type {
   BundleMcpToolRuntime,
   McpCatalogTool,
+  McpPrivateRequestMetaByServer,
   McpToolCatalog,
   SessionMcpRuntime,
 } from "./agent-bundle-mcp-types.js";
@@ -510,6 +511,7 @@ export function buildBundleMcpToolsFromCatalog(params: {
 export async function materializeBundleMcpToolsForRun(params: {
   runtime: SessionMcpRuntime;
   reservedToolNames?: Iterable<string>;
+  privateRequestMetaByServer?: McpPrivateRequestMetaByServer;
   disposeRuntime?: () => Promise<void>;
 }): Promise<BundleMcpToolRuntime> {
   let disposed = false;
@@ -531,7 +533,10 @@ export async function materializeBundleMcpToolsForRun(params: {
     reservedToolNames,
     createExecute: (tool) => async (toolCallId: string, input: unknown) => {
       params.runtime.markUsed();
-      const result = await params.runtime.callTool(tool.serverName, tool.toolName, input);
+      const requestMeta = params.privateRequestMetaByServer?.[tool.serverName];
+      const result = await params.runtime.callTool(tool.serverName, tool.toolName, input, {
+        ...(requestMeta ? { requestMeta } : {}),
+      });
       const agentResult = toAgentToolResult({
         serverName: tool.serverName,
         toolName: tool.toolName,

@@ -25,6 +25,7 @@ import type {
   AgentLoopConfig,
   AgentLoopTurnUpdate,
   AgentMessage,
+  AgentRunLifecycleDirective,
   AgentState,
   AgentTool,
   BeforeToolCallContext,
@@ -153,6 +154,8 @@ export interface AgentOptions {
   maxRetryDelayMs?: number;
   /** Default strategy for executing multiple tool calls in one assistant message. */
   toolExecution?: ToolExecutionMode;
+  /** Trusted one-shot lifecycle fence for the first provider request in this agent run. */
+  initialRunLifecycle?: Extract<AgentRunLifecycleDirective, { kind: "require_tool" }>;
 }
 
 class PendingMessageQueue {
@@ -249,6 +252,7 @@ export class Agent {
   public maxRetryDelayMs?: number;
   /** Tool execution strategy for assistant messages that contain multiple tool calls. */
   public toolExecution: ToolExecutionMode;
+  private initialRunLifecycle?: Extract<AgentRunLifecycleDirective, { kind: "require_tool" }>;
 
   constructor(options: AgentOptions = {}) {
     this.mutableState = createMutableAgentState(options.initialState);
@@ -271,6 +275,7 @@ export class Agent {
     this.transport = options.transport ?? "auto";
     this.maxRetryDelayMs = options.maxRetryDelayMs;
     this.toolExecution = options.toolExecution ?? "parallel";
+    this.initialRunLifecycle = options.initialRunLifecycle;
   }
 
   /**
@@ -483,6 +488,8 @@ export class Agent {
 
   private createLoopConfig(options: { skipInitialSteeringPoll?: boolean } = {}): AgentLoopConfig {
     let skipInitialSteeringPoll = options.skipInitialSteeringPoll === true;
+    const initialRunLifecycle = this.initialRunLifecycle;
+    this.initialRunLifecycle = undefined;
     return {
       model: this.mutableState.model,
       thinkingLevel: this.mutableState.thinkingLevel,
@@ -497,6 +504,7 @@ export class Agent {
       thinkingBudgets: this.thinkingBudgets,
       maxRetryDelayMs: this.maxRetryDelayMs,
       toolExecution: this.toolExecution,
+      initialRunLifecycle,
       beforeToolCall: this.beforeToolCall,
       resolveDeferredTool: this.resolveDeferredTool,
       afterToolCall: this.afterToolCall,

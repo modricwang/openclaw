@@ -56,6 +56,10 @@ function buildRestrictedFinalizationAttempt(
     thinkLevel: attempt.thinkLevel,
     fastMode: attempt.fastMode,
     fastModeAuto: attempt.fastModeAuto,
+    // Settled-turn finalization is an internal continuation, never a new
+    // external-user ingress and never the first turn of the original run.
+    mcpPrivateRequestMetaByServer: undefined,
+    initialRunLifecycle: undefined,
     operation: "settled-tool-finalization",
     disableTools: true,
     disableTrajectory: true,

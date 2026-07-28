@@ -187,8 +187,10 @@ export function createCombinedSessionMcpRuntime(params: {
         part.markUsed();
       }
     },
-    async callTool(serverName, toolName, input) {
-      return await (await ownerForServer(serverName)).callTool(serverName, toolName, input);
+    async callTool(serverName, toolName, input, options) {
+      return await (
+        await ownerForServer(serverName)
+      ).callTool(serverName, toolName, input, options);
     },
     async listTools(serverName, requestParams) {
       const owner = await ownerForServer(serverName);

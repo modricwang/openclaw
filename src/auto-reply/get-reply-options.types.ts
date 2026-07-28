@@ -1,3 +1,4 @@
+import type { AgentRunLifecycleDirective } from "@openclaw/agent-core";
 import type { FastMode } from "@openclaw/normalization-core/string-coerce";
 /** Public option types for reply generation callbacks, streaming, and delivery policy. */
 import type { AgentPlanStep } from "../channels/streaming.js";
@@ -151,6 +152,8 @@ export type GetReplyOptions = {
   disableTools?: boolean;
   /** Runtime tool allow-list for this turn. Empty means no tools. */
   toolsAllow?: string[];
+  /** Trusted one-shot lifecycle fence for the first provider request. */
+  initialRunLifecycle?: Extract<AgentRunLifecycleDirective, { kind: "require_tool" }>;
   /** If true, include the heartbeat response tool for structured heartbeat outcomes. */
   enableHeartbeatTool?: boolean;
   /** If true, keep the heartbeat response tool available even under narrow tool profiles. */

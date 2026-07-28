@@ -1,3 +1,4 @@
+import type { AgentRunLifecycleDirective } from "@openclaw/agent-core";
 /**
  * Shared parameter types for embedded-agent run orchestration.
  */
@@ -28,6 +29,7 @@ import type {
   SkillWorkshopProposalMutationBudget,
   SkillWorkshopRunOptions,
 } from "../../../skills/workshop/types.js";
+import type { McpPrivateRequestMetaByServer } from "../../agent-bundle-mcp-types.js";
 import type { ExecElevatedDefaults, ExecToolDefaults } from "../../bash-tools.exec-types.js";
 import type { BootstrapContextRunKind } from "../../bootstrap-mode.js";
 import type { AgentStreamParams, ClientToolDefinition } from "../../command/shared-types.js";
@@ -233,6 +235,10 @@ export type RunEmbeddedAgentParams = {
   bootstrapContextRunKind?: BootstrapContextRunKind;
   /** Optional tool allow-list; when set, only these tools are sent to the model. */
   toolsAllow?: string[];
+  /** Host-only request metadata sent only to the named configured MCP servers. */
+  mcpPrivateRequestMetaByServer?: McpPrivateRequestMetaByServer;
+  /** Trusted one-shot lifecycle fence for the first provider request. */
+  initialRunLifecycle?: Extract<AgentRunLifecycleDirective, { kind: "require_tool" }>;
   /** Owner-scoped plugin tool grant; normal policy and deny rules still apply. */
   runtimePluginToolGrant?: RuntimePluginToolGrant;
   /** Trusted in-process subagent-completion handoff; never derived from public input. */

@@ -1518,6 +1518,7 @@ describe("agentLoop tool termination", () => {
     const prepare: AgentTool = {
       ...makeTool("prepare", executed),
       executionMode: "sequential",
+      parameters: Type.Object({ action: Type.Literal("prepare") }, { additionalProperties: false }),
       execute: async () => {
         executed.push("prepare");
         return {
@@ -1562,7 +1563,12 @@ describe("agentLoop tool termination", () => {
       queueMicrotask(() => {
         if (streamCalls === 1) {
           const message = makeAssistantMessage([
-            { type: "toolCall", id: "call-prepare", name: "prepare", arguments: {} },
+            {
+              type: "toolCall",
+              id: "call-prepare",
+              name: "prepare",
+              arguments: { action: "prepare" },
+            },
             { type: "toolCall", id: "call-tail", name: "tail", arguments: {} },
           ]);
           stream.push({ type: "done", reason: "toolUse", message });
@@ -1611,6 +1617,178 @@ describe("agentLoop tool termination", () => {
     expect(streamCalls).toBe(2);
     expect(steeringPolls).toBe(1);
     expect(executed).toEqual(["prepare", "finalize"]);
+  });
+
+  it("applies a host-issued required tool before the first provider response", async () => {
+    const executed: string[] = [];
+    let providerCalls = 0;
+    const prepare: AgentTool = {
+      ...makeTool("prepare", executed),
+      executionMode: "sequential",
+      parameters: Type.Object({ action: Type.Literal("prepare") }, { additionalProperties: false }),
+      execute: async () => {
+        executed.push("prepare");
+        return {
+          content: [{ type: "text", text: "prepared" }],
+          details: {},
+          terminate: true,
+        };
+      },
+    };
+    const streamFn: StreamFn = (_model, context, options) => {
+      providerCalls += 1;
+      expect(context.tools?.map((tool) => tool.name)).toEqual(["prepare"]);
+      expect((options as { toolChoice?: unknown } | undefined)?.toolChoice).toBe("required");
+      const stream = createAssistantMessageEventStream();
+      queueMicrotask(() => {
+        const message = makeAssistantMessage([
+          {
+            type: "toolCall",
+            id: "call-initial-prepare",
+            name: "prepare",
+            arguments: { action: "prepare" },
+          },
+        ]);
+        stream.push({ type: "done", reason: "toolUse", message });
+        stream.end();
+      });
+      return stream;
+    };
+
+    const events = await collectEvents(
+      agentLoop(
+        [{ role: "user", content: "heartbeat", timestamp: 1 }],
+        {
+          systemPrompt: "",
+          messages: [],
+          tools: [prepare, makeTool("tail", executed)],
+        },
+        {
+          ...config,
+          initialRunLifecycle: {
+            kind: "require_tool",
+            toolName: "prepare",
+            requiredArguments: { action: "prepare" },
+            violationMode: "fail_run",
+          },
+        },
+        undefined,
+        streamFn,
+      ),
+    );
+
+    expect(providerCalls).toBe(1);
+    expect(executed).toEqual(["prepare"]);
+    expect(events.at(-1)).toMatchObject({ type: "agent_end" });
+  });
+
+  it("fails the run when the first provider response omits the host-required tool", async () => {
+    const executed: string[] = [];
+    const streamFn: StreamFn = (_model, context, options) => {
+      expect(context.tools?.map((tool) => tool.name)).toEqual(["prepare"]);
+      expect((options as { toolChoice?: unknown } | undefined)?.toolChoice).toBe("required");
+      const stream = createAssistantMessageEventStream();
+      queueMicrotask(() => {
+        const message = makeAssistantMessage([{ type: "text", text: "NO_REPLY" }]);
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end();
+      });
+      return stream;
+    };
+    const stream = agentLoop(
+      [{ role: "user", content: "heartbeat", timestamp: 1 }],
+      {
+        systemPrompt: "",
+        messages: [],
+        tools: [
+          {
+            ...makeTool("prepare", executed),
+            parameters: Type.Object(
+              { action: Type.Literal("prepare") },
+              { additionalProperties: false },
+            ),
+          },
+          makeTool("tail", executed),
+        ],
+      },
+      {
+        ...config,
+        initialRunLifecycle: {
+          kind: "require_tool",
+          toolName: "prepare",
+          requiredArguments: { action: "prepare" },
+          violationMode: "fail_run",
+        },
+      },
+      undefined,
+      streamFn,
+    );
+
+    const events = await collectEvents(stream);
+    const result = await stream.result();
+    expect(executed).toEqual([]);
+    expect(events.at(-1)).toMatchObject({ type: "agent_end" });
+    expect(result.at(-1)).toMatchObject({
+      role: "assistant",
+      stopReason: "error",
+      errorMessage: expect.stringContaining("was not executed successfully"),
+    });
+  });
+
+  it("fails the run when the first provider response mixes text with the host-required tool", async () => {
+    const executed: string[] = [];
+    const streamFn: StreamFn = () => {
+      const stream = createAssistantMessageEventStream();
+      queueMicrotask(() => {
+        const message = makeAssistantMessage([
+          { type: "text", text: "NO_REPLY" },
+          {
+            type: "toolCall",
+            id: "call-initial-prepare",
+            name: "prepare",
+            arguments: { action: "prepare" },
+          },
+        ]);
+        stream.push({ type: "done", reason: "toolUse", message });
+        stream.end();
+      });
+      return stream;
+    };
+    const stream = agentLoop(
+      [{ role: "user", content: "heartbeat", timestamp: 1 }],
+      {
+        systemPrompt: "",
+        messages: [],
+        tools: [
+          {
+            ...makeTool("prepare", executed),
+            parameters: Type.Object(
+              { action: Type.Literal("prepare") },
+              { additionalProperties: false },
+            ),
+          },
+        ],
+      },
+      {
+        ...config,
+        initialRunLifecycle: {
+          kind: "require_tool",
+          toolName: "prepare",
+          requiredArguments: { action: "prepare" },
+          violationMode: "fail_run",
+        },
+      },
+      undefined,
+      streamFn,
+    );
+
+    const result = await stream.result();
+    expect(executed).toEqual([]);
+    expect(result.at(-1)).toMatchObject({
+      role: "assistant",
+      stopReason: "error",
+      errorMessage: expect.stringContaining("was not executed successfully"),
+    });
   });
 
   it("allows one tool-free model-authored final response and then ends the run", async () => {
