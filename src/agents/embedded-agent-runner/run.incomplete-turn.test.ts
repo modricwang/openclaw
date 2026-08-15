@@ -1264,6 +1264,85 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     expectWarnMessageWith("settled post-tool turn lacked a final answer");
   });
 
+  it("finalizes once after settled side-effecting tools end in reasoning only", async () => {
+    mockedResolveModelAsync.mockResolvedValue({
+      model: {
+        id: "deepseek-v4-pro",
+        provider: "deepseek",
+        contextWindow: 200000,
+        api: "openai-completions",
+      },
+      error: null,
+      authStorage: {
+        setRuntimeApiKey: vi.fn(),
+      },
+      modelRegistry: {},
+    });
+    const reasoningOnlyAssistant = {
+      role: "assistant",
+      stopReason: "stop",
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+      content: [
+        {
+          type: "thinking",
+          thinking: "The writes completed; now summarize them for the user.",
+          thinkingSignature: JSON.stringify({ id: "rs_settled_tools", type: "reasoning" }),
+        },
+      ],
+    } as unknown as NonNullable<EmbeddedRunAttemptResult["lastAssistant"]>;
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedRunEmbeddedAttempt.mockImplementationOnce(async (attemptParams) => {
+      markUserMessagePersisted(attemptParams);
+      return makeAttemptResult({
+        assistantTexts: [],
+        toolMetas: [
+          { toolName: "manage_nutrition", meta: "committed" },
+          { toolName: "manage_food_profile", meta: "committed" },
+        ],
+        itemLifecycle: { startedCount: 2, completedCount: 2, activeCount: 0 },
+        replayMetadata: { hadPotentialSideEffects: true, replaySafe: false },
+        lastAssistant: reasoningOnlyAssistant,
+        currentAttemptAssistant: reasoningOnlyAssistant,
+      });
+    });
+    const finalAssistant = {
+      role: "assistant",
+      stopReason: "stop",
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+      content: [{ type: "text", text: "Both updates are saved. Here is the final answer." }],
+    } as unknown as NonNullable<EmbeddedRunAttemptResult["lastAssistant"]>;
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: ["Both updates are saved. Here is the final answer."],
+        lastAssistant: finalAssistant,
+        currentAttemptAssistant: finalAssistant,
+        currentAttemptCompletedAssistant: finalAssistant,
+      }),
+    );
+    mockedBuildEmbeddedRunPayloads
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([{ text: "Both updates are saved. Here is the final answer." }]);
+
+    const result = await runEmbeddedAgent({
+      ...overflowBaseRunParams,
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+      runId: "run-reasoning-only-settled-tools-finalization",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    expect(result.payloads?.[0]?.text).toBe("Both updates are saved. Here is the final answer.");
+    const finalizationCall = runAttemptCall(1);
+    expect(finalizationCall.prompt).toBe(SETTLED_TOOL_TERMINAL_CONTINUATION_INSTRUCTION);
+    expect(finalizationCall.disableTools).toBe(true);
+    expect(finalizationCall.operation).toBe("settled-tool-finalization");
+    expect(finalizationCall.skipPreparedUserTurnMessage).toBe(true);
+    expectNoWarnMessageWith("reasoning-only assistant turn detected");
+    expectWarnMessageWith("settled post-tool turn lacked a final answer");
+  });
+
   it.each([
     {
       label: "explicit optional expectation",

@@ -781,7 +781,7 @@ export function resolveSettledToolTerminalContinuationInstruction(params: {
 }): string | null {
   const assistant = params.attempt.currentAttemptAssistant ?? params.attempt.lastAssistant;
   const currentAttemptAssistant = params.attempt.currentAttemptAssistant;
-  const emptyStopAfterSettledTools = Boolean(
+  const nonVisibleStopAfterSettledTools = Boolean(
     params.allowEmptyStopContinuation &&
     currentAttemptAssistant?.stopReason === "stop" &&
     params.attempt.toolMetas.length > 0 &&
@@ -790,7 +790,7 @@ export function resolveSettledToolTerminalContinuationInstruction(params: {
     params.attempt.itemLifecycle.completedCount === params.attempt.itemLifecycle.startedCount &&
     params.attempt.itemLifecycle.activeCount === 0 &&
     !hasAcceptedSessionSpawn(params.attempt.acceptedSessionSpawns) &&
-    isEmptyResponseAssistantTurn({
+    isNonVisibleAssistantTurnEligibleForSilentReply({
       payloadCount: params.payloadCount,
       attempt: params.attempt,
     }),
@@ -832,7 +832,7 @@ export function resolveSettledToolTerminalContinuationInstruction(params: {
     params.aborted ||
     params.promptError != null ||
     params.timedOut ||
-    (assistant?.stopReason === "toolUse" ? !allToolsProvenComplete : !emptyStopAfterSettledTools) ||
+    (assistant?.stopReason === "toolUse" ? !allToolsProvenComplete : !nonVisibleStopAfterSettledTools) ||
     params.attempt.lastToolError ||
     params.attempt.clientToolCalls ||
     params.attempt.yieldDetected ||
