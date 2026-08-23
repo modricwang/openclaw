@@ -7,6 +7,7 @@ import {
   buildRestartRecoveryClaimCleanupPatch,
   hasRestartRecoveryTerminalRun,
   resolveRestartRecoveryChannelAuthority,
+  sameRestartRecoveryRunProfile,
 } from "../config/sessions/restart-recovery-state.js";
 import { applySessionEntryReplacements } from "../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -407,7 +408,11 @@ export async function resumeMainSession(params: {
           entry.status !== "running" ||
           entry.abortedLastRun !== true ||
           normalizeOptionalString(entry.restartRecoveryDeliveryRunId) !== claimedRunId ||
-          normalizeOptionalString(entry.restartRecoveryDeliverySourceRunId) !== sourceRunId
+          normalizeOptionalString(entry.restartRecoveryDeliverySourceRunId) !== sourceRunId ||
+          !sameRestartRecoveryRunProfile(
+            entry.restartRecoveryRunProfile,
+            params.entry.restartRecoveryRunProfile,
+          )
         ) {
           return { result: false };
         }
@@ -455,6 +460,16 @@ export async function resumeMainSession(params: {
         ? { sourceReplyDeliveryMode: params.entry.restartRecoverySourceReplyDeliveryMode }
         : {}),
       ...(params.forceRestartSafeTools ? { forceRestartSafeTools: true } : {}),
+      ...(params.entry.restartRecoveryRunProfile?.kind === "heartbeat"
+        ? {
+            bootstrapContextRunKind: "heartbeat",
+            ...(params.entry.restartRecoveryRunProfile.bootstrapContextMode
+              ? {
+                  bootstrapContextMode: params.entry.restartRecoveryRunProfile.bootstrapContextMode,
+                }
+              : {}),
+          }
+        : {}),
       inputProvenance: {
         kind: "internal_system",
         sourceSessionKey: dispatchSessionKey,

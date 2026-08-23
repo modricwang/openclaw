@@ -43,6 +43,11 @@ export type RestartRecoveryTerminalDeliveryEvidenceResult = {
 export type RestartRecoveryTerminalDeliveryEvidence =
   RestartRecoveryTerminalDeliveryEvidenceResult & { runId: string };
 
+export type RestartRecoveryRunProfile = {
+  kind: "heartbeat";
+  bootstrapContextMode?: "full" | "lightweight";
+};
+
 /** Durable ownership and idempotency state for gateway restart recovery. */
 export type SessionRestartRecoveryState = {
   restartRecoveryBeforeAgentReplyState?: RestartRecoveryBeforeAgentReplyState;
@@ -60,6 +65,7 @@ export type SessionRestartRecoveryState = {
   restartRecoveryDeliveryRequestFingerprint?: string;
   restartRecoveryDeliveryRunId?: string;
   restartRecoveryDeliverySourceRunId?: string;
+  restartRecoveryRunProfile?: RestartRecoveryRunProfile;
   restartRecoveryRequesterAccountId?: string;
   restartRecoveryRequesterSenderId?: string;
   restartRecoverySameChannelThreadRequired?: true;

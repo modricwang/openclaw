@@ -5,6 +5,7 @@ import {
 } from "../../utils/delivery-context.shared.js";
 import { isDeliverableMessageChannel } from "../../utils/message-channel.js";
 import type {
+  RestartRecoveryRunProfile,
   RestartRecoveryTerminalDeliveryEvidence,
   RestartRecoveryTerminalDeliveryEvidenceResult,
 } from "./restart-recovery-types.js";
@@ -19,6 +20,34 @@ type RestartRecoveryChannelAuthority = {
 
 function normalizeRunId(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeRestartRecoveryRunProfile(value: unknown): RestartRecoveryRunProfile | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.kind !== "heartbeat") {
+    return undefined;
+  }
+  const bootstrapContextMode =
+    record.bootstrapContextMode === "full" || record.bootstrapContextMode === "lightweight"
+      ? record.bootstrapContextMode
+      : undefined;
+  return {
+    kind: "heartbeat",
+    ...(bootstrapContextMode ? { bootstrapContextMode } : {}),
+  };
+}
+
+/** Compares the compact typed execution profile, never transcript or prompt text. */
+export function sameRestartRecoveryRunProfile(left: unknown, right: unknown): boolean {
+  const normalizedLeft = normalizeRestartRecoveryRunProfile(left);
+  const normalizedRight = normalizeRestartRecoveryRunProfile(right);
+  return (
+    normalizedLeft?.kind === normalizedRight?.kind &&
+    normalizedLeft?.bootstrapContextMode === normalizedRight?.bootstrapContextMode
+  );
 }
 
 /** Resolves only a complete durable channel claim; session-route fallbacks carry no authority. */
@@ -281,6 +310,7 @@ type RestartRecoveryNormalizedField =
   | "restartRecoveryDeliveryRequestFingerprint"
   | "restartRecoveryDeliveryRunId"
   | "restartRecoveryDeliverySourceRunId"
+  | "restartRecoveryRunProfile"
   | "restartRecoveryRequesterAccountId"
   | "restartRecoveryRequesterSenderId"
   | "restartRecoverySameChannelThreadRequired"
@@ -354,6 +384,13 @@ export function normalizeRestartRecoveryEntryFields(
   assign(
     "restartRecoveryDeliverySourceRunId",
     normalizeRunId(entry.restartRecoveryDeliverySourceRunId),
+  );
+  const runProfile = normalizeRestartRecoveryRunProfile(entry.restartRecoveryRunProfile);
+  assign(
+    "restartRecoveryRunProfile",
+    sameRestartRecoveryRunProfile(entry.restartRecoveryRunProfile, runProfile)
+      ? entry.restartRecoveryRunProfile
+      : runProfile,
   );
   assign(
     "restartRecoveryRequesterAccountId",
@@ -501,6 +538,7 @@ export function buildRestartRecoveryClaimCleanupPatch(params: {
     restartRecoveryDeliveryRequestFingerprint: undefined,
     restartRecoveryDeliveryRunId: undefined,
     restartRecoveryDeliverySourceRunId: undefined,
+    restartRecoveryRunProfile: undefined,
     restartRecoveryRequesterAccountId: undefined,
     restartRecoveryRequesterSenderId: undefined,
     restartRecoverySameChannelThreadRequired: undefined,

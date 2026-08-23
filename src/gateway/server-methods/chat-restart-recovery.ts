@@ -319,6 +319,7 @@ export function resolveRestartSafeChatAdmission(params: {
               entry.restartRecoveryDeliveryRequestFingerprint,
             restartRecoveryDeliveryRunId: entry.restartRecoveryDeliveryRunId,
             restartRecoveryDeliverySourceRunId: entry.restartRecoveryDeliverySourceRunId,
+            restartRecoveryRunProfile: entry.restartRecoveryRunProfile,
             restartRecoveryRequesterAccountId: entry.restartRecoveryRequesterAccountId,
             restartRecoveryRequesterSenderId: entry.restartRecoveryRequesterSenderId,
             restartRecoverySameChannelThreadRequired:
@@ -361,6 +362,7 @@ export function buildRestartSafeChatTranscriptState(params: {
       restartRecoveryDeliveryRequestFingerprint: params.admission.requestFingerprint,
       restartRecoveryDeliveryRunId: params.clientRunId,
       restartRecoveryDeliverySourceRunId: params.clientRunId,
+      restartRecoveryRunProfile: undefined,
       restartRecoveryRequesterAccountId: undefined,
       restartRecoveryRequesterSenderId: undefined,
       restartRecoverySameChannelThreadRequired: undefined,

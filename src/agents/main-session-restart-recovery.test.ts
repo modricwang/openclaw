@@ -863,8 +863,35 @@ describe("main-session-restart-recovery", () => {
     expect(resumeParams.sessionKey).toBe("agent:main:main");
     expect(resumeParams.deliver).toBe(false);
     expect(resumeParams.lane).toBe("main");
+    expect(resumeParams.bootstrapContextRunKind).toBeUndefined();
     const store = readStore(path.join(sessionsDir, "sessions.json"));
     expect(store["agent:main:main"]?.abortedLastRun).toBe(false);
+  });
+
+  it("restores the typed Heartbeat execution profile before native resume", async () => {
+    const sessionsDir = await makeSessionsDir();
+    await writeStore(
+      sessionsDir,
+      mainSessionStore({
+        restartRecoveryDeliveryRunId: "heartbeat-recovery-1",
+        restartRecoverySourceIngress: "internal",
+        restartRecoveryRunProfile: {
+          kind: "heartbeat",
+          bootstrapContextMode: "lightweight",
+        },
+      }),
+    );
+    await writeCompletedToolTranscript(sessionsDir);
+
+    await expectRecovery({ recovered: 1, failed: 0, skipped: 0 });
+    expect(callGateway).toHaveBeenCalledOnce();
+    expect(gatewayParams()).toMatchObject({
+      sessionKey: "agent:main:main",
+      deliver: false,
+      lane: "main",
+      bootstrapContextRunKind: "heartbeat",
+      bootstrapContextMode: "lightweight",
+    });
   });
 
   it.each([

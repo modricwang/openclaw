@@ -123,6 +123,7 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "restartRecoveryDeliveryRequestFingerprint",
   "restartRecoveryDeliveryRunId",
   "restartRecoveryDeliverySourceRunId",
+  "restartRecoveryRunProfile",
   "restartRecoveryBeforeAgentReplyState",
   "restartRecoveryDeliveryReceiptState",
   "restartRecoveryDeliveryToolCallId",

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
-import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
+import { loadSessionEntry, replaceSessionEntry } from "../../config/sessions/session-accessor.js";
 import type {
   UserTurnTranscriptRecorder,
   UserTurnTranscriptTarget,
@@ -70,5 +70,42 @@ describe("createReplyRestartRecoveryClaimController", () => {
       storePath,
       agentId: "main",
     });
+  });
+
+  it("persists a source-less Heartbeat profile as an internal restart claim", async () => {
+    const root = tempDirs.make("openclaw-heartbeat-admission-");
+    const storePath = path.join(root, "sessions.json");
+    const sessionKey = "agent:main:main";
+    const sessionId = "heartbeat-session";
+    let entry = { sessionId, updatedAt: Date.now() };
+    await replaceSessionEntry({ storePath, sessionKey }, entry);
+
+    const controller = createReplyRestartRecoveryClaimController({
+      getEntry: () => entry,
+      getSessionId: () => sessionId,
+      isRestartAbort: () => false,
+      resolveDeliveryContext: () => undefined,
+      runProfile: { kind: "heartbeat", bootstrapContextMode: "lightweight" },
+      sessionKey,
+      setEntry: (next) => {
+        entry = next;
+      },
+      storePath,
+    });
+
+    await expect(controller.admitUserTurn()).resolves.toBe("admitted");
+    const persisted = loadSessionEntry({ storePath, sessionKey });
+    expect(persisted).toMatchObject({
+      sessionId,
+      status: "running",
+      abortedLastRun: false,
+      restartRecoverySourceIngress: "internal",
+      restartRecoveryRunProfile: {
+        kind: "heartbeat",
+        bootstrapContextMode: "lightweight",
+      },
+    });
+    expect(persisted?.restartRecoveryDeliveryRunId).toEqual(expect.any(String));
+    expect(persisted?.restartRecoveryDeliverySourceRunId).toBeUndefined();
   });
 });

@@ -506,6 +506,15 @@ export function createReplyAgentRestartRecoveryController(
     requesterAccountId:
       followupRun.originatingAccountId ?? sessionCtx.AccountId ?? followupRun.run.agentAccountId,
     requesterSenderId: sessionCtx.SenderId,
+    runProfile:
+      opts?.isHeartbeat === true
+        ? {
+            kind: "heartbeat",
+            ...(opts.bootstrapContextMode === "full" || opts.bootstrapContextMode === "lightweight"
+              ? { bootstrapContextMode: opts.bootstrapContextMode }
+              : {}),
+          }
+        : undefined,
     resolveUserTurnTarget: ({
       entry,
       sessionId,

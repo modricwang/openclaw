@@ -4,9 +4,13 @@ import {
   buildRestartRecoveryClaimCleanupPatch,
   hasRestartRecoverySourceClaim,
   hasRestartRecoveryTerminalRun,
+  sameRestartRecoveryRunProfile,
   sameRestartRecoveryTerminalRunIds,
 } from "../../config/sessions/restart-recovery-state.js";
-import type { RestartRecoveryBeforeAgentReplyState } from "../../config/sessions/restart-recovery-types.js";
+import type {
+  RestartRecoveryBeforeAgentReplyState,
+  RestartRecoveryRunProfile,
+} from "../../config/sessions/restart-recovery-types.js";
 import { loadSessionEntry, updateSessionEntry } from "../../config/sessions/session-accessor.js";
 import type {
   SessionTranscriptTurnExpectedState,
@@ -92,6 +96,7 @@ function buildExpectedSessionState(entry: SessionEntry): SessionTranscriptTurnEx
     restartRecoveryDeliveryRequestFingerprint: entry.restartRecoveryDeliveryRequestFingerprint,
     restartRecoveryDeliveryRunId: entry.restartRecoveryDeliveryRunId,
     restartRecoveryDeliverySourceRunId: entry.restartRecoveryDeliverySourceRunId,
+    restartRecoveryRunProfile: entry.restartRecoveryRunProfile,
     restartRecoveryRequesterAccountId: entry.restartRecoveryRequesterAccountId,
     restartRecoveryRequesterSenderId: entry.restartRecoveryRequesterSenderId,
     restartRecoverySameChannelThreadRequired: entry.restartRecoverySameChannelThreadRequired,
@@ -118,6 +123,10 @@ function matchesExpectedSessionState(
       expected.restartRecoveryDeliveryRequestFingerprint &&
     entry.restartRecoveryDeliveryRunId === expected.restartRecoveryDeliveryRunId &&
     entry.restartRecoveryDeliverySourceRunId === expected.restartRecoveryDeliverySourceRunId &&
+    sameRestartRecoveryRunProfile(
+      entry.restartRecoveryRunProfile,
+      expected.restartRecoveryRunProfile,
+    ) &&
     entry.restartRecoveryRequesterAccountId === expected.restartRecoveryRequesterAccountId &&
     entry.restartRecoveryRequesterSenderId === expected.restartRecoveryRequesterSenderId &&
     entry.restartRecoverySameChannelThreadRequired ===
@@ -143,6 +152,7 @@ export function createReplyRestartRecoveryClaimController(params: {
   resolveDeliveryContext: (entry: SessionEntry | undefined) => DeliveryContext | undefined;
   requesterAccountId?: unknown;
   requesterSenderId?: unknown;
+  runProfile?: RestartRecoveryRunProfile;
   resolveUserTurnTarget?: (params: {
     entry: SessionEntry;
     sessionId: string;
@@ -304,8 +314,8 @@ export function createReplyRestartRecoveryClaimController(params: {
 
     const deliveryContext = params.resolveDeliveryContext(entry);
     const recoverableDeliveryContext =
-      deliveryContext && sourceTurnId ? deliveryContext : undefined;
-    if (recoverableDeliveryContext) {
+      deliveryContext && (sourceTurnId || params.runProfile) ? deliveryContext : undefined;
+    if (recoverableDeliveryContext && sourceTurnId) {
       const sourceMessage = recorder?.getPersistedMessage?.() ?? (await recorder?.resolveMessage());
       const persistedSourceTurnId = normalizeOptionalString(
         (sourceMessage as { idempotencyKey?: unknown } | undefined)?.idempotencyKey,
@@ -314,7 +324,7 @@ export function createReplyRestartRecoveryClaimController(params: {
         throw new Error("channel restart recovery requires source-keyed user-turn admission");
       }
     }
-    if (!recoverableDeliveryContext && !activeClaimRunId) {
+    if (!recoverableDeliveryContext && !params.runProfile && !activeClaimRunId) {
       // Source-less scheduled/ambient runs may execute, but cannot own a
       // channel recovery claim that would be impossible to correlate after restart.
       await persistUserTurnOnly(recorder, sessionId);
@@ -336,34 +346,40 @@ export function createReplyRestartRecoveryClaimController(params: {
           terminalSourceRunId: normalizeOptionalString(entry.restartRecoveryDeliverySourceRunId),
         })
       : {};
-    const patch: SessionTranscriptTurnLifecyclePatch = recoverableDeliveryContext
-      ? {
-          ...retiredClaim,
-          abortedLastRun: false,
-          endedAt: undefined,
-          restartRecoveryBeforeAgentReplyState: params.beforeAgentReplyState,
-          restartRecoveryDeliveryReceiptState: undefined,
-          restartRecoveryDeliveryToolCallId: undefined,
-          restartRecoveryDeliveryContext: recoverableDeliveryContext,
-          restartRecoveryDeliveryRequestFingerprint: undefined,
-          restartRecoveryDeliveryRunId: recoveryRunId,
-          restartRecoveryDeliverySourceRunId: sourceTurnId,
-          restartRecoveryRequesterAccountId: sourceTurnId
-            ? normalizeOptionalString(params.requesterAccountId)
-            : undefined,
-          restartRecoveryRequesterSenderId: sourceTurnId
-            ? normalizeOptionalString(params.requesterSenderId)
-            : undefined,
-          restartRecoverySameChannelThreadRequired:
-            sourceTurnId && params.sameChannelThreadRequired === true ? true : undefined,
-          restartRecoverySourceIngress: sourceTurnId ? "channel" : undefined,
-          restartRecoverySourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
-          runtimeMs: undefined,
-          startedAt: updatedAt,
-          status: "running",
-          updatedAt,
-        }
-      : { ...retiredClaim, updatedAt };
+    const patch: SessionTranscriptTurnLifecyclePatch =
+      recoverableDeliveryContext || params.runProfile
+        ? {
+            ...retiredClaim,
+            abortedLastRun: false,
+            endedAt: undefined,
+            restartRecoveryBeforeAgentReplyState: params.beforeAgentReplyState,
+            restartRecoveryDeliveryReceiptState: undefined,
+            restartRecoveryDeliveryToolCallId: undefined,
+            restartRecoveryDeliveryContext: recoverableDeliveryContext,
+            restartRecoveryDeliveryRequestFingerprint: undefined,
+            restartRecoveryDeliveryRunId: recoveryRunId,
+            restartRecoveryDeliverySourceRunId: sourceTurnId,
+            restartRecoveryRunProfile: params.runProfile,
+            restartRecoveryRequesterAccountId: sourceTurnId
+              ? normalizeOptionalString(params.requesterAccountId)
+              : undefined,
+            restartRecoveryRequesterSenderId: sourceTurnId
+              ? normalizeOptionalString(params.requesterSenderId)
+              : undefined,
+            restartRecoverySameChannelThreadRequired:
+              sourceTurnId && params.sameChannelThreadRequired === true ? true : undefined,
+            restartRecoverySourceIngress: sourceTurnId
+              ? "channel"
+              : params.runProfile
+                ? "internal"
+                : undefined,
+            restartRecoverySourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
+            runtimeMs: undefined,
+            startedAt: updatedAt,
+            status: "running",
+            updatedAt,
+          }
+        : { ...retiredClaim, updatedAt };
     const persisted = await persistAdmissionPatch({
       entry,
       patch,

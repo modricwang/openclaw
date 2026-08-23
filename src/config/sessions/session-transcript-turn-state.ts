@@ -1,5 +1,6 @@
 import {
   mergeRestartRecoveryTerminalRunIds,
+  sameRestartRecoveryRunProfile,
   sameRestartRecoveryTerminalRunIds,
 } from "./restart-recovery-state.js";
 import type {
@@ -42,6 +43,10 @@ export function sessionMatchesExpectedTranscriptTurn<T extends { entry: SessionE
           expectedState.restartRecoveryDeliveryRunId &&
         selected.entry.restartRecoveryDeliverySourceRunId ===
           expectedState.restartRecoveryDeliverySourceRunId &&
+        sameRestartRecoveryRunProfile(
+          selected.entry.restartRecoveryRunProfile,
+          expectedState.restartRecoveryRunProfile,
+        ) &&
         selected.entry.restartRecoveryRequesterAccountId ===
           expectedState.restartRecoveryRequesterAccountId &&
         selected.entry.restartRecoveryRequesterSenderId ===
