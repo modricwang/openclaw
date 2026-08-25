@@ -49,10 +49,18 @@ type SteeringLease = {
 type TrajectoryRecorder = ReturnType<typeof createTrajectoryRuntimeRecorder>;
 
 export async function submitEmbeddedAttemptPrompt(input: {
-  attempt: Pick<EmbeddedRunAttemptParams, "sessionId" | "userTurnTranscriptRecorder">;
+  attempt: Pick<
+    EmbeddedRunAttemptParams,
+    | "bootstrapContextRunKind"
+    | "inputProvenance"
+    | "sessionId"
+    | "suppressNextUserMessagePersistence"
+    | "userTurnTranscriptRecorder"
+  >;
   activeSession: PromptSubmissionSession;
   appendContext?: string;
   contextTokenBudget: number;
+  continueActiveSession?: () => Promise<void>;
   images: ImageContent[];
   leasedSteering?: SteeringLease;
   modelPrompt: string;
@@ -110,6 +118,37 @@ export async function submitEmbeddedAttemptPrompt(input: {
       }
     };
   };
+
+  const continueExistingHeartbeatTurn =
+    attempt.bootstrapContextRunKind === "heartbeat" &&
+    attempt.suppressNextUserMessagePersistence === true &&
+    attempt.inputProvenance?.kind === "internal_system" &&
+    attempt.inputProvenance.sourceTool === "main_session_restart_recovery";
+  if (continueExistingHeartbeatTurn) {
+    if (!input.continueActiveSession) {
+      throw new Error("embedded native session continuation is unavailable");
+    }
+    input.onFinalPromptText("");
+    input.trajectoryRecorder?.recordEvent("prompt.continued", {
+      messages: activeSession.messages,
+    });
+    updateActiveEmbeddedRunSnapshot(attempt.sessionId, {
+      transcriptLeafId: input.transcriptLeafId,
+      messages: snapshotRecentMessages(normalizedReplayMessages),
+      inFlightPrompt: "",
+    });
+    const cleanupProviderPromptHistoryTransform = installProviderPromptHistoryTransform();
+    try {
+      await input.continueActiveSession();
+      if (input.leasedSteering) {
+        ackPendingAgentSteeringItems(input.leasedSteering);
+        input.onSteeringAcknowledged();
+      }
+    } finally {
+      cleanupProviderPromptHistoryTransform();
+    }
+    return;
+  }
 
   input.onFinalPromptText(input.transcriptPrompt);
   input.trajectoryRecorder?.recordEvent("prompt.submitted", {

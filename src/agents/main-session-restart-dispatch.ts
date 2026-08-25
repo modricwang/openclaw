@@ -350,6 +350,7 @@ export async function resumeMainSession(params: {
   sessionKey: string;
   pendingFinalDeliveryText?: string | null;
   forceRestartSafeTools?: boolean;
+  resumeExistingTurn?: boolean;
   sessionWorkAdmissionHandoffId?: string;
   gatewayRuntime: GatewayRecoveryRuntime;
 }): Promise<MainSessionResumeResult> {
@@ -357,6 +358,7 @@ export async function resumeMainSession(params: {
     typeof params.pendingFinalDeliveryText === "string"
       ? sanitizePendingFinalDeliveryText(params.pendingFinalDeliveryText)
       : "";
+  const resumeExistingTurn = params.resumeExistingTurn === true && !sanitizedPendingText;
   const deliveryContext = resolveRestartRecoveryDeliveryContext({
     cfg: params.cfg,
     entry: params.entry,
@@ -445,7 +447,9 @@ export async function resumeMainSession(params: {
         : "skipped";
     }
     const agentParams: Record<string, unknown> = {
-      message: buildResumeMessage(sanitizedPendingText),
+      message: resumeExistingTurn
+        ? "openclaw:resume-existing-turn"
+        : buildResumeMessage(sanitizedPendingText),
       sessionKey: dispatchSessionKey,
       expectedExistingSessionId: params.entry.sessionId,
       ...(params.sessionWorkAdmissionHandoffId
@@ -460,6 +464,7 @@ export async function resumeMainSession(params: {
         ? { sourceReplyDeliveryMode: params.entry.restartRecoverySourceReplyDeliveryMode }
         : {}),
       ...(params.forceRestartSafeTools ? { forceRestartSafeTools: true } : {}),
+      ...(resumeExistingTurn ? { suppressPromptPersistence: true } : {}),
       ...(params.entry.restartRecoveryRunProfile?.kind === "heartbeat"
         ? {
             bootstrapContextRunKind: "heartbeat",

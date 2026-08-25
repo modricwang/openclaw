@@ -122,6 +122,7 @@ export async function runEmbeddedAttemptSettledPhase(
     },
     isProbeSession,
     onBlockReplyFlush,
+    continueActiveSession,
     promptActiveSession,
     stream: preparedStream,
     timeout: attemptTimeout,
@@ -233,6 +234,7 @@ export async function runEmbeddedAttemptSettledPhase(
           : {}),
       },
       submission: {
+        continueActiveSession,
         promptActiveSession,
         sessionPromptState,
         toolResultPromptProjectionState,

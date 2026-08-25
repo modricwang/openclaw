@@ -65,13 +65,16 @@ function createFixture(options: { aborted?: boolean } = {}) {
     removeAbortSignalListener: vi.fn(),
   };
   const activeSession = {
-    agent: { streamFn: vi.fn() },
+    agent: { state: { messages: [] }, streamFn: vi.fn(), continue: vi.fn(async () => undefined) },
     dispose: vi.fn(),
     isCompacting: false,
     messages: [],
     prompt: vi.fn(async () => undefined),
   };
-  const sessionManager = {};
+  const sessionManager = {
+    removeTrailingEntries: vi.fn(() => 0),
+    buildSessionContext: vi.fn(() => ({ messages: activeSession.agent.state.messages })),
+  };
   const externalAbortController = {
     setRunAbort: vi.fn(() => order.push("set-run-abort")),
     setCompactionState: vi.fn(() => order.push("set-compaction-state")),
@@ -226,6 +229,28 @@ describe("prepareEmbeddedAttemptStreamRuntime", () => {
     expect(fixture.activeSession.prompt).toHaveBeenCalledWith("hello", undefined);
     expect(fixture.trackPromptSettlePromise).toHaveBeenCalledOnce();
     expect(mocks.withOwnedSessionTranscriptWrites).toHaveBeenCalledOnce();
+  });
+
+  it("continues the existing turn after structurally removing restart abort tails", async () => {
+    const fixture = createFixture();
+    fixture.activeSession.agent.state.messages = [
+      { role: "user", content: "heartbeat" },
+      { role: "toolResult", toolCallId: "prepare-1", toolName: "prepare", content: "ready" },
+      { role: "assistant", content: [], stopReason: "aborted" },
+    ];
+    fixture.sessionManager.buildSessionContext.mockReturnValue({
+      messages: fixture.activeSession.agent.state.messages.slice(0, -1),
+    });
+
+    const result = await prepareEmbeddedAttemptStreamRuntime(fixture.input);
+    await result.continueActiveSession();
+
+    expect(fixture.sessionManager.removeTrailingEntries).toHaveBeenCalledWith(expect.any(Function));
+    expect(fixture.activeSession.agent.continue).toHaveBeenCalledOnce();
+    expect(fixture.activeSession.agent.state.messages.at(-1)).toMatchObject({
+      role: "toolResult",
+      toolCallId: "prepare-1",
+    });
   });
 
   it("flushes pending tool results and disposes the session when history preparation fails", async () => {

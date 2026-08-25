@@ -864,6 +864,8 @@ describe("main-session-restart-recovery", () => {
     expect(resumeParams.deliver).toBe(false);
     expect(resumeParams.lane).toBe("main");
     expect(resumeParams.bootstrapContextRunKind).toBeUndefined();
+    expect(resumeParams.suppressPromptPersistence).toBeUndefined();
+    expect(resumeParams.message).toContain("previous turn was interrupted");
     const store = readStore(path.join(sessionsDir, "sessions.json"));
     expect(store["agent:main:main"]?.abortedLastRun).toBe(false);
   });
@@ -887,10 +889,13 @@ describe("main-session-restart-recovery", () => {
     expect(callGateway).toHaveBeenCalledOnce();
     expect(gatewayParams()).toMatchObject({
       sessionKey: "agent:main:main",
+      expectedExistingSessionId: "main-session",
       deliver: false,
       lane: "main",
       bootstrapContextRunKind: "heartbeat",
       bootstrapContextMode: "lightweight",
+      suppressPromptPersistence: true,
+      message: "openclaw:resume-existing-turn",
     });
   });
 
@@ -4561,8 +4566,7 @@ describe("main-session-restart-recovery", () => {
         {
           role: "assistant",
           content,
-          stopReason: "error",
-          errorMessage: "Request was aborted",
+          stopReason: "aborted",
         },
       ]);
 

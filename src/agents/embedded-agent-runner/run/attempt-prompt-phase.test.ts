@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   releasePendingSteering: vi.fn(),
   removeTrailingPrecheckError: vi.fn(),
   resolveApiKey: vi.fn(),
+  submitPrompt: vi.fn(),
   debug: vi.fn(),
   warn: vi.fn(),
 }));
@@ -46,6 +47,9 @@ vi.mock("./attempt-prompt-error.js", () => ({
 }));
 vi.mock("./attempt-prompt-preflight.js", () => ({
   handleEmbeddedAttemptMidTurnPrecheck: mocks.handleMidTurnPrecheck,
+}));
+vi.mock("./attempt-prompt-submit.js", () => ({
+  submitEmbeddedAttemptPrompt: mocks.submitPrompt,
 }));
 vi.mock("./attempt-transcript-helpers.js", () => ({
   removeTrailingMidTurnPrecheckAssistantError: mocks.removeTrailingPrecheckError,
@@ -231,6 +235,7 @@ function createFixture() {
       sessionAgentId: "main",
     },
     submission: {
+      continueActiveSession: vi.fn(async () => undefined),
       promptActiveSession: vi.fn(),
       toolResultPromptProjectionState: {},
       trajectoryRecorder: null,
@@ -268,6 +273,34 @@ beforeEach(() => {
 });
 
 describe("runEmbeddedAttemptPromptPhase", () => {
+  it("bypasses new-prompt assembly for a typed Heartbeat restart continuation", async () => {
+    const fixture = createFixture();
+    fixture.input.attempt.bootstrapContextRunKind = "heartbeat";
+    fixture.input.attempt.suppressNextUserMessagePersistence = true;
+    fixture.input.attempt.inputProvenance = {
+      kind: "internal_system",
+      sourceTool: "main_session_restart_recovery",
+    };
+    mocks.submitPrompt.mockImplementationOnce(async (input) => {
+      input.onFinalPromptText("");
+    });
+
+    await runEmbeddedAttemptPromptPhase(fixture.input);
+
+    expect(mocks.preparePromptAssembly).not.toHaveBeenCalled();
+    expect(mocks.preparePromptContext).not.toHaveBeenCalled();
+    expect(mocks.beforeAgentRun).not.toHaveBeenCalled();
+    expect(mocks.dispatchPrompt).not.toHaveBeenCalled();
+    expect(mocks.submitPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transcriptPrompt: "",
+        continueActiveSession: fixture.input.submission.continueActiveSession,
+      }),
+    );
+    expect(fixture.setFinalPromptText).toHaveBeenCalledWith("");
+    expect(fixture.order).toEqual(["google-cache", "stop-steering"]);
+  });
+
   it("runs prompt work in phase order and publishes prompt outputs", async () => {
     const fixture = createFixture();
 

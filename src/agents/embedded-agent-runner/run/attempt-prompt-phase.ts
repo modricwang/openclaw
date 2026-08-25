@@ -1,11 +1,16 @@
 /** Runs prompt assembly, admission, submission, and prompt-local recovery. */
 import { formatErrorMessage } from "../../../infra/errors.js";
+import { isMainSessionRestartRecoveryInputProvenance } from "../../../sessions/input-provenance.js";
 import {
   buildHeartbeatOutcomeContext,
   claimHeartbeatOutcomeForRun,
 } from "../../../infra/heartbeat-outcome-store.js";
 import { releasePendingAgentSteeringItems } from "../../subagent-registry.js";
 import { prepareGooglePromptCacheStreamFn } from "../google-prompt-cache.js";
+import {
+  resolveLiveToolResultAggregateMaxChars,
+  resolveLiveToolResultMaxChars,
+} from "../tool-result-truncation.js";
 import { log } from "../logger.js";
 import { resolveEmbeddedAgentApiKey } from "../stream-resolution.js";
 import { runEmbeddedAttemptBeforeAgentRun } from "./attempt-before-agent-run.js";
@@ -15,6 +20,8 @@ import { dispatchEmbeddedAttemptPrompt } from "./attempt-prompt-dispatch.js";
 import { handleEmbeddedAttemptPromptError } from "./attempt-prompt-error.js";
 import { handleEmbeddedAttemptMidTurnPrecheck } from "./attempt-prompt-preflight.js";
 import { removeTrailingMidTurnPrecheckAssistantError } from "./attempt-transcript-helpers.js";
+import { submitEmbeddedAttemptPrompt } from "./attempt-prompt-submit.js";
+import { DEFAULT_CONTEXT_TOKENS } from "../../defaults.js";
 import type { MidTurnPrecheckRequest } from "./midturn-precheck.js";
 
 type PromptAssemblyInput = Parameters<typeof prepareEmbeddedAttemptPromptAssembly>[0];
@@ -43,12 +50,21 @@ type PromptPreflightPhaseInput = PromptDispatchInput["preflight"] & {
 };
 type PromptSubmissionPhaseInput = Pick<
   PromptDispatchInput["submission"],
+  | "continueActiveSession"
   | "promptActiveSession"
   | "sessionPromptState"
   | "toolResultPromptProjectionState"
   | "trajectoryRecorder"
 >;
 type WithOwnedSessionWriteLock = <T>(operation: () => Promise<T> | T) => Promise<T>;
+
+function isExistingHeartbeatRestartContinuation(attempt: PromptAssemblyInput["attempt"]): boolean {
+  return (
+    attempt.bootstrapContextRunKind === "heartbeat" &&
+    attempt.suppressNextUserMessagePersistence === true &&
+    isMainSessionRestartRecoveryInputProvenance(attempt.inputProvenance)
+  );
+}
 
 export async function runEmbeddedAttemptPromptPhase(input: {
   attempt: PromptAssemblyInput["attempt"];
@@ -140,6 +156,72 @@ export async function runEmbeddedAttemptPromptPhase(input: {
     });
     skipPromptSubmission = true;
     log.warn(`[tools] ${input.emptyExplicitToolAllowlistError.message}`);
+  }
+
+  if (isExistingHeartbeatRestartContinuation(attempt)) {
+    if (skipPromptSubmission) {
+      throw input.emptyExplicitToolAllowlistError;
+    }
+    const contextTokenBudget = attempt.contextTokenBudget ?? DEFAULT_CONTEXT_TOKENS;
+    const toolResultMaxChars = resolveLiveToolResultMaxChars({
+      contextWindowTokens: contextTokenBudget,
+    });
+    const toolResultAggregateMaxChars = resolveLiveToolResultAggregateMaxChars({
+      contextWindowTokens: contextTokenBudget,
+      perResultMaxChars: toolResultMaxChars,
+    });
+    input.lifecycle.setPrePromptMessageCount(activeSession.messages.length);
+    input.lifecycle.setPromptCacheChangesForTurn(null);
+    const googlePromptCacheStreamFn = await prepareGooglePromptCacheStreamFn({
+      apiKey: await resolveEmbeddedAgentApiKey({
+        provider: attempt.provider,
+        resolvedApiKey: attempt.resolvedApiKey,
+        authStorage: attempt.authStorage,
+      }),
+      extraParams: input.googlePromptCache.extraParams,
+      model: attempt.model,
+      modelId: attempt.modelId,
+      provider: attempt.provider,
+      sessionManager: {
+        appendCustomEntry: async (customType, data) => {
+          await input.withOwnedSessionWriteLock(() => {
+            sessionManager.appendCustomEntry(customType, data);
+          });
+        },
+        getEntries: () => sessionManager.getEntries(),
+      },
+      signal: input.googlePromptCache.signal,
+      streamFn: activeSession.agent.streamFn,
+      systemPrompt: input.assembly.systemPromptText,
+    });
+    if (googlePromptCacheStreamFn) {
+      activeSession.agent.streamFn = googlePromptCacheStreamFn;
+    }
+    try {
+      await submitEmbeddedAttemptPrompt({
+        attempt,
+        activeSession,
+        contextTokenBudget,
+        continueActiveSession: input.submission.continueActiveSession,
+        images: [],
+        modelPrompt: "",
+        onFinalPromptText: input.lifecycle.setFinalPromptText,
+        onSteeringAcknowledged: () => undefined,
+        promptActiveSession: input.submission.promptActiveSession,
+        runtimeOnly: true,
+        sessionPromptState: input.submission.sessionPromptState,
+        systemPrompt: input.assembly.systemPromptText,
+        toolResultAggregateMaxChars,
+        toolResultMaxChars,
+        toolResultPromptProjectionState: input.submission.toolResultPromptProjectionState,
+        trajectoryRecorder: input.submission.trajectoryRecorder,
+        transcriptLeafId: null,
+        transcriptPrompt: "",
+      });
+    } finally {
+      input.lifecycle.stopAcceptingSteerMessages();
+    }
+    return { promptStartedAt };
   }
 
   const promptAssembly = await prepareEmbeddedAttemptPromptAssembly({

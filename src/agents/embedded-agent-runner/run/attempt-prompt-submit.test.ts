@@ -200,4 +200,33 @@ describe("submitEmbeddedAttemptPrompt", () => {
       originalHugeResult?.role === "toolResult" ? originalHugeResult.content : undefined,
     ).toEqual([{ type: "text", text: oversized }]);
   });
+
+  it("continues a Heartbeat restart without submitting or transforming a new prompt", async () => {
+    const { activeSession, baseStreamFn, originalTransformContext } = createSession();
+    const input = createBaseInput();
+    const continueActiveSession = vi.fn(async () => undefined);
+    const promptActiveSession = vi.fn(async () => undefined);
+
+    await submitEmbeddedAttemptPrompt({
+      ...input,
+      attempt: {
+        sessionId,
+        bootstrapContextRunKind: "heartbeat",
+        suppressNextUserMessagePersistence: true,
+        inputProvenance: {
+          kind: "internal_system",
+          sourceTool: "main_session_restart_recovery",
+        },
+      },
+      activeSession,
+      continueActiveSession,
+      promptActiveSession,
+    });
+
+    expect(continueActiveSession).toHaveBeenCalledOnce();
+    expect(promptActiveSession).not.toHaveBeenCalled();
+    expect(input.onFinalPromptText).toHaveBeenCalledWith("");
+    expect(activeSession.agent.streamFn).toBe(baseStreamFn);
+    expect(activeSession.agent.transformContext).toBe(originalTransformContext);
+  });
 });

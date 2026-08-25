@@ -34,7 +34,10 @@ import { redactSensitiveText } from "../../logging/redact.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.types.js";
 import { isSubagentSessionKey } from "../../routing/session-key.js";
-import { annotateInterSessionPromptText } from "../../sessions/input-provenance.js";
+import {
+  annotateInterSessionPromptText,
+  isMainSessionRestartRecoveryInputProvenance,
+} from "../../sessions/input-provenance.js";
 import {
   buildPersistedUserTurnMessage,
   preparePersistedUserTurnMessageForTranscriptWrite,
@@ -649,6 +652,13 @@ export function runAgentAttempt(params: {
     (agentHarnessPolicy.runtime === "openclaw" && agentHarnessPolicy.runtimeSource !== "implicit"
       ? "openclaw"
       : undefined);
+  const resumeExistingHeartbeatTurn =
+    params.opts.bootstrapContextRunKind === "heartbeat" &&
+    params.opts.suppressPromptPersistence === true &&
+    isMainSessionRestartRecoveryInputProvenance(params.opts.inputProvenance);
+  if (resumeExistingHeartbeatTurn && isCliExecutionProvider) {
+    throw new Error("Heartbeat restart continuation requires the embedded native session runtime");
+  }
   if (!isRawModelRun && isCliExecutionProvider) {
     const cliSessionBinding = getCliSessionBinding(params.sessionEntry, cliExecutionProvider);
     const cliProcessCwd = params.cwd ? resolveUserPath(params.cwd) : params.workspaceDir;

@@ -499,6 +499,7 @@ export async function recoverStore(params: {
       pendingFinalDeliveryText: entry.pendingFinalDeliveryText,
       forceRestartSafeTools:
         entry.restartRecoveryForceSafeTools === true || resumePolicy.forceRestartSafeTools,
+      resumeExistingTurn: entry.restartRecoveryRunProfile?.kind === "heartbeat",
       sessionWorkAdmissionHandoffId: params.sessionWorkAdmissionHandoffId,
       gatewayRuntime: params.gatewayRuntime,
     });

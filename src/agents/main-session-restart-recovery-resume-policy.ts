@@ -229,37 +229,11 @@ export function hasReplaySafeCodeModeCheckpointInCurrentTurn(
   return false;
 }
 
-// Generic fetch/undici abort strings plus the gateway's own restart abort
-// reason (run-termination.ts); which one lands depends on whether the provider
-// stream throws or surfaces the abort as an error event. Only "error" tails
-// need this allowlist, so a genuine provider failure is never replayed as
-// lifecycle noise.
-const RESTART_ABORT_ERROR_MESSAGES = new Set([
-  "Request was aborted",
-  "This operation was aborted",
-  "agent run aborted for restart",
-]);
-
 function isRestartAbortAssistantMessage(message: unknown): boolean {
   if (!message || typeof message !== "object" || getMessageRole(message) !== "assistant") {
     return false;
   }
-  const stopReason = normalizeOptionalString((message as { stopReason?: unknown }).stopReason);
-  // Every row that reaches restart recovery was mid-run when the process went
-  // down, so an "aborted" tail is that interruption whatever string the
-  // transport persisted with it ("Worker inference aborted.", a provider cancel
-  // message, or nothing). Matching on the abort strings alone made ordinary
-  // restarts fall through to the unresumable notice.
-  if (stopReason === "aborted") {
-    return true;
-  }
-  if (stopReason !== "error") {
-    return false;
-  }
-  const errorMessage = normalizeOptionalString(
-    (message as { errorMessage?: unknown }).errorMessage,
-  );
-  return errorMessage !== undefined && RESTART_ABORT_ERROR_MESSAGES.has(errorMessage);
+  return (message as { stopReason?: unknown }).stopReason === "aborted";
 }
 
 export function isRestartAbortTailArtifact(message: unknown): boolean {
@@ -270,7 +244,7 @@ export function isRestartAbortTailArtifact(message: unknown): boolean {
   return Array.isArray(content) && content.length === 0;
 }
 
-function isRestartAbortedWaitFailure(message: unknown): boolean {
+function isFailedCodeModeWaitResult(message: unknown): boolean {
   if (!message || typeof message !== "object" || getMessageRole(message) !== "toolResult") {
     return false;
   }
@@ -290,24 +264,11 @@ function isRestartAbortedWaitFailure(message: unknown): boolean {
   ) {
     return false;
   }
-  const content = record.content;
-  const contentText = Array.isArray(content)
-    ? content
-        .filter(
-          (block) =>
-            block && typeof block === "object" && (block as { type?: unknown }).type === "text",
-        )
-        .map((block) => normalizeOptionalString((block as { text?: unknown }).text) ?? "")
-        .join("\n")
-    : "";
-  const errorText =
-    normalizeOptionalString((details as { error?: unknown }).error) ??
-    normalizeOptionalString(contentText);
-  return /^(?:(?:Abort)?Error:\s*)?(?:The|This) operation was aborted\.?$/u.test(errorText ?? "");
+  return true;
 }
 
 function isRestartAbortedWaitResultArtifact(message: unknown, waitMessage: unknown): boolean {
-  if (!isRestartAbortedWaitFailure(message)) {
+  if (!isFailedCodeModeWaitResult(message)) {
     return false;
   }
   const toolCallId = normalizeOptionalString((message as Record<string, unknown>).toolCallId);
@@ -401,7 +362,7 @@ export function resolveMainSessionResumePolicy(
   if (forceRestartSafeTools && isPendingAssistantToolCall(lastMeaningful)) {
     return { action: "resume", forceRestartSafeTools: true };
   }
-  if (isRestartAbortedWaitFailure(lastMeaningful)) {
+  if (isFailedCodeModeWaitResult(lastMeaningful)) {
     const waitCall = readCodeModeWaitCall(meaningfulMessages[1]);
     const checkpoint = readCodeModeCheckpoint(meaningfulMessages[2]);
     return waitCall && checkpoint?.replaySafe === true && checkpoint.runId === waitCall.runId

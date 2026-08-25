@@ -49,6 +49,23 @@ type StreamPhaseInput = Omit<
   | "runAbortController"
 >;
 
+function isRestartAbortTailMessage(message: unknown): boolean {
+  return (
+    Boolean(message) &&
+    typeof message === "object" &&
+    (message as { role?: unknown }).role === "assistant" &&
+    (message as { stopReason?: unknown }).stopReason === "aborted"
+  );
+}
+
+function trimRestartAbortTail<T>(messages: T[]): T[] {
+  let end = messages.length;
+  while (end > 0 && isRestartAbortTailMessage(messages[end - 1])) {
+    end -= 1;
+  }
+  return end === messages.length ? messages : messages.slice(0, end);
+}
+
 export async function prepareEmbeddedAttemptStreamRuntime(input: {
   attempt: EmbeddedRunAttemptParams;
   activeSession: StreamInput["activeSession"];
@@ -140,6 +157,25 @@ export async function prepareEmbeddedAttemptStreamRuntime(input: {
     withOwnedSessionTranscriptWrites(input.ownedTranscriptWriteContext, async () =>
       abortable(input.trackPromptSettlePromise(activeSession.prompt(prompt, options))),
     );
+  const continueActiveSession = (): Promise<void> =>
+    withOwnedSessionTranscriptWrites(input.ownedTranscriptWriteContext, async () => {
+      sessionManager.removeTrailingEntries(
+        (entry) => entry.type === "message" && isRestartAbortTailMessage(entry.message),
+      );
+      const continuableMessages = trimRestartAbortTail(
+        sessionManager.buildSessionContext().messages,
+      );
+      const tail = continuableMessages.at(-1);
+      if (!tail || (tail.role !== "user" && tail.role !== "toolResult")) {
+        throw new Error("Heartbeat restart transcript is not continuable without a new message");
+      }
+      const continueAgentLoop = activeSession.agent.continue?.bind(activeSession.agent);
+      if (!continueAgentLoop) {
+        throw new Error("embedded native session continuation is unavailable");
+      }
+      activeSession.agent.state.messages = continuableMessages;
+      await abortable(input.trackPromptSettlePromise(continueAgentLoop()));
+    });
   const onBlockReply = attempt.onBlockReply
     ? bindOwnedSessionTranscriptWrites(input.ownedTranscriptWriteContext, attempt.onBlockReply)
     : undefined;
@@ -185,6 +221,7 @@ export async function prepareEmbeddedAttemptStreamRuntime(input: {
     history: preparedHistory,
     isProbeSession,
     onBlockReplyFlush,
+    continueActiveSession,
     promptActiveSession,
     stream: preparedStream,
     timeout: attemptTimeout,
