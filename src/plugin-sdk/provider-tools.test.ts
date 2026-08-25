@@ -389,6 +389,10 @@ describe("buildProviderToolCompatFamilyHooks", () => {
                   enum: ["scheduled", "worn"],
                   default: "scheduled",
                 },
+                unused_plugs: {
+                  anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }],
+                  default: null,
+                },
               },
               required: ["operation"],
             },
@@ -397,6 +401,7 @@ describe("buildProviderToolCompatFamilyHooks", () => {
               properties: {
                 operation: { const: "replace_single", type: "string" },
                 reason: { const: "loss", type: "string", default: "loss" },
+                unused_plugs: { type: "integer", minimum: 0 },
               },
               required: ["operation", "reason"],
             },
@@ -422,6 +427,7 @@ describe("buildProviderToolCompatFamilyHooks", () => {
       properties: {
         operation: { type: "string", enum: ["replace_pair", "replace_single"] },
         reason: { type: "string", enum: ["scheduled", "worn", "loss"] },
+        unused_plugs: { type: "integer", minimum: 0, nullable: true },
       },
       required: ["operation"],
     });

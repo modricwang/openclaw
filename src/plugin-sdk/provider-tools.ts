@@ -446,6 +446,10 @@ function mergeDeepSeekCompatiblePropertySchemas(
   if (deepSeekSchemasStructurallyEqual(left, right)) {
     return left;
   }
+  const nullableEquivalent = mergeDeepSeekNullableEquivalentPropertySchemas(left, right);
+  if (nullableEquivalent !== undefined) {
+    return nullableEquivalent;
+  }
   const leftValues = deepSeekStringSchemaValues(left);
   const rightValues = deepSeekStringSchemaValues(right);
   if (leftValues === undefined || rightValues === undefined) {
@@ -461,6 +465,38 @@ function mergeDeepSeekCompatiblePropertySchemas(
     merged.enum = [...new Set([...leftValues, ...rightValues])];
   }
   if (leftRecord.nullable === true || rightRecord.nullable === true) {
+    merged.nullable = true;
+  }
+  return merged;
+}
+
+function mergeDeepSeekNullableEquivalentPropertySchemas(
+  left: unknown,
+  right: unknown,
+): unknown | undefined {
+  if (
+    !left ||
+    typeof left !== "object" ||
+    Array.isArray(left) ||
+    !right ||
+    typeof right !== "object" ||
+    Array.isArray(right)
+  ) {
+    return undefined;
+  }
+  const leftWithoutNullable = { ...(left as Record<string, unknown>) };
+  const rightWithoutNullable = { ...(right as Record<string, unknown>) };
+  delete leftWithoutNullable.nullable;
+  delete rightWithoutNullable.nullable;
+  if (!deepSeekSchemasStructurallyEqual(leftWithoutNullable, rightWithoutNullable)) {
+    return undefined;
+  }
+  const merged = { ...(left as Record<string, unknown>) };
+  delete merged.default;
+  if (
+    (left as Record<string, unknown>).nullable === true ||
+    (right as Record<string, unknown>).nullable === true
+  ) {
     merged.nullable = true;
   }
   return merged;
