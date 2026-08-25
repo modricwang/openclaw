@@ -269,6 +269,109 @@ describe("buildProviderToolCompatFamilyHooks", () => {
     ).toStrictEqual([]);
   });
 
+  it("preserves every branch of discriminated object unions for the deepseek family", () => {
+    const hooks = buildProviderToolCompatFamilyHooks("deepseek");
+    const tools = [
+      {
+        name: "manage_nutrition",
+        description: "",
+        parameters: {
+          type: "object",
+          oneOf: [
+            {
+              type: "object",
+              properties: {
+                action: { const: "meal_intake", type: "string" },
+                chat_id: { type: "string", default: "" },
+                items: { type: "array", items: { type: "object" } },
+              },
+              required: ["action", "items"],
+              additionalProperties: false,
+            },
+            {
+              type: "object",
+              properties: {
+                action: { const: "summary", type: "string" },
+                chat_id: { type: "string", default: "" },
+                date: { type: "string" },
+              },
+              required: ["action"],
+              additionalProperties: false,
+            },
+          ],
+        },
+      },
+    ] as never;
+
+    const normalized = hooks.normalizeToolSchemas({
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
+      modelApi: "openai-completions",
+      model: {
+        provider: "deepseek",
+        api: "openai-completions",
+        id: "deepseek-v4-pro",
+      } as never,
+      tools,
+    });
+
+    expect(normalized[0]?.parameters).toEqual({
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["meal_intake", "summary"] },
+        chat_id: { type: "string", default: "" },
+        items: { type: "array", items: { type: "object" } },
+        date: { type: "string" },
+      },
+      required: ["action"],
+      additionalProperties: false,
+    });
+  });
+
+  it("fails closed when discriminated object branches reuse an incompatible property", () => {
+    const hooks = buildProviderToolCompatFamilyHooks("deepseek");
+    const tools = [
+      {
+        name: "conflicting_union",
+        description: "",
+        parameters: {
+          oneOf: [
+            {
+              type: "object",
+              properties: {
+                action: { const: "a", type: "string" },
+                value: { type: "string" },
+              },
+              required: ["action"],
+            },
+            {
+              type: "object",
+              properties: {
+                action: { const: "b", type: "string" },
+                value: { type: "number" },
+              },
+              required: ["action"],
+            },
+          ],
+        },
+      },
+    ] as never;
+
+    expect(() =>
+      hooks.normalizeToolSchemas({
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
+        modelApi: "openai-completions",
+        model: {
+          provider: "deepseek",
+          api: "openai-completions",
+          id: "deepseek-v4-pro",
+        } as never,
+        tools,
+      }),
+    ).toThrow(/incompatible property schemas/);
+  });
+
   it("normalizes parameter-free and typed-object schemas for the openai family", () => {
     const hooks = buildProviderToolCompatFamilyHooks("openai");
     const tools = [

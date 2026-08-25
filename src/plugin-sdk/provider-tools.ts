@@ -199,11 +199,15 @@ function isNullSchemaVariant(schema: unknown): boolean {
   return Array.isArray(record.enum) && record.enum.length === 1 && record.enum[0] === null;
 }
 
-function normalizeDeepSeekSchema(schema: unknown): unknown {
+function normalizeDeepSeekSchema(
+  schema: unknown,
+  rootSchema: unknown = schema,
+  resolvingRefs: ReadonlySet<string> = new Set(),
+): unknown {
   if (Array.isArray(schema)) {
     let changed = false;
     const normalized = schema.map((entry) => {
-      const next = normalizeDeepSeekSchema(entry);
+      const next = normalizeDeepSeekSchema(entry, rootSchema, resolvingRefs);
       changed ||= next !== entry;
       return next;
     });
@@ -229,7 +233,7 @@ function normalizeDeepSeekSchema(schema: unknown): unknown {
         continue;
       }
     }
-    const next = normalizeDeepSeekSchema(value);
+    const next = normalizeDeepSeekSchema(value, rootSchema, resolvingRefs);
     normalized[key] = next;
     changed ||= next !== value;
   }
@@ -239,7 +243,9 @@ function normalizeDeepSeekSchema(schema: unknown): unknown {
   }
 
   const variants = record[unionKey] as unknown[];
-  const normalizedVariants = variants.map((entry) => normalizeDeepSeekSchema(entry));
+  const normalizedVariants = variants.map((entry) =>
+    normalizeDeepSeekSchema(entry, rootSchema, resolvingRefs),
+  );
   const nonNullVariants = normalizedVariants.filter((entry) => !isNullSchemaVariant(entry));
   const hasNullVariant = nonNullVariants.length < normalizedVariants.length;
 
@@ -260,6 +266,22 @@ function normalizeDeepSeekSchema(schema: unknown): unknown {
     return merged;
   }
 
+  const objectVariants = nonNullVariants.map((entry) =>
+    resolveDeepSeekObjectVariant(entry, rootSchema, resolvingRefs),
+  );
+  if (objectVariants.length > 1 && objectVariants.every((entry) => entry !== undefined)) {
+    const mergedObject = mergeDeepSeekDiscriminatedObjectUnion(
+      objectVariants as Array<Record<string, unknown>>,
+      normalized,
+    );
+    if (mergedObject) {
+      if (hasNullVariant) {
+        mergedObject.nullable = true;
+      }
+      return mergedObject;
+    }
+  }
+
   const selected = nonNullVariants[0] ?? normalizedVariants[0];
   if (!selected || typeof selected !== "object" || Array.isArray(selected)) {
     return normalized;
@@ -273,6 +295,163 @@ function normalizeDeepSeekSchema(schema: unknown): unknown {
     merged.nullable = true;
   }
   return merged;
+}
+
+function resolveDeepSeekObjectVariant(
+  schema: unknown,
+  rootSchema: unknown,
+  resolvingRefs: ReadonlySet<string>,
+): Record<string, unknown> | undefined {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+    return undefined;
+  }
+  const record = schema as Record<string, unknown>;
+  if (typeof record.$ref !== "string") {
+    return record;
+  }
+  const ref = record.$ref;
+  if (resolvingRefs.has(ref)) {
+    throw new Error(`DeepSeek schema projection encountered a cyclic local ref: ${ref}`);
+  }
+  const target = resolveLocalSchemaRef(rootSchema, ref);
+  if (target === undefined) {
+    throw new Error(`DeepSeek schema projection could not resolve local ref: ${ref}`);
+  }
+  const nextRefs = new Set(resolvingRefs);
+  nextRefs.add(ref);
+  const resolved = normalizeDeepSeekSchema(target, rootSchema, nextRefs);
+  if (!resolved || typeof resolved !== "object" || Array.isArray(resolved)) {
+    throw new Error(`DeepSeek schema projection resolved a non-object branch: ${ref}`);
+  }
+  const siblings = { ...record };
+  delete siblings.$ref;
+  return { ...(resolved as Record<string, unknown>), ...siblings };
+}
+
+function resolveLocalSchemaRef(rootSchema: unknown, ref: string): unknown {
+  if (!ref.startsWith("#/")) {
+    return undefined;
+  }
+  let current: unknown = rootSchema;
+  for (const encodedPart of ref.slice(2).split("/")) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return undefined;
+    }
+    const part = encodedPart.replace(/~1/g, "/").replace(/~0/g, "~");
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+function mergeDeepSeekDiscriminatedObjectUnion(
+  variants: Array<Record<string, unknown>>,
+  outer: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const propertySets = variants.map((variant) =>
+    variant.properties && typeof variant.properties === "object" && !Array.isArray(variant.properties)
+      ? (variant.properties as Record<string, unknown>)
+      : undefined,
+  );
+  if (propertySets.some((properties) => properties === undefined)) {
+    return undefined;
+  }
+  const properties = propertySets as Array<Record<string, unknown>>;
+  const discriminator = Object.keys(properties[0] ?? {}).find((name) => {
+    const values = properties.map((entry) => stringConstValue(entry[name]));
+    return values.every((value) => value !== undefined) && new Set(values).size === values.length;
+  });
+  if (!discriminator) {
+    return undefined;
+  }
+
+  const mergedProperties: Record<string, unknown> = {};
+  for (const branchProperties of properties) {
+    for (const [name, propertySchema] of Object.entries(branchProperties)) {
+      if (!(name in mergedProperties)) {
+        mergedProperties[name] = propertySchema;
+        continue;
+      }
+      if (name === discriminator) {
+        continue;
+      }
+      if (!deepSeekSchemasStructurallyEqual(mergedProperties[name], propertySchema)) {
+        throw new Error(
+          `DeepSeek schema projection found incompatible property schemas: ${discriminator}.${name}`,
+        );
+      }
+    }
+  }
+
+  const discriminatorValues = properties.map((entry) => stringConstValue(entry[discriminator]));
+  const firstDiscriminator = properties[0]?.[discriminator];
+  const discriminatorRecord =
+    firstDiscriminator && typeof firstDiscriminator === "object" && !Array.isArray(firstDiscriminator)
+      ? { ...(firstDiscriminator as Record<string, unknown>) }
+      : {};
+  delete discriminatorRecord.const;
+  mergedProperties[discriminator] = {
+    ...discriminatorRecord,
+    type: "string",
+    enum: discriminatorValues,
+  };
+
+  const requiredSets = variants.map(
+    (variant) => new Set(Array.isArray(variant.required) ? variant.required.map(String) : []),
+  );
+  const required = [...(requiredSets[0] ?? new Set<string>())].filter((name) =>
+    requiredSets.every((entry) => entry.has(name)),
+  );
+  const outerRequired = Array.isArray(outer.required) ? outer.required.map(String) : [];
+  const mergedRequired = [...new Set([...outerRequired, ...required])];
+  const merged: Record<string, unknown> = {
+    ...outer,
+    type: "object",
+    properties: mergedProperties,
+  };
+  if (mergedRequired.length > 0) {
+    merged.required = mergedRequired;
+  }
+  if (
+    merged.additionalProperties === undefined &&
+    variants.every((variant) => variant.additionalProperties === false)
+  ) {
+    merged.additionalProperties = false;
+  }
+  return merged;
+}
+
+function stringConstValue(schema: unknown): string | undefined {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+    return undefined;
+  }
+  const record = schema as Record<string, unknown>;
+  if (typeof record.const === "string") {
+    return record.const;
+  }
+  if (Array.isArray(record.enum) && record.enum.length === 1 && typeof record.enum[0] === "string") {
+    return record.enum[0];
+  }
+  return undefined;
+}
+
+const DEEPSEEK_SCHEMA_ANNOTATION_KEYS = new Set(["title", "description", "default", "examples"]);
+
+function deepSeekSchemaShape(schema: unknown): unknown {
+  if (Array.isArray(schema)) {
+    return schema.map((entry) => deepSeekSchemaShape(entry));
+  }
+  if (!schema || typeof schema !== "object") {
+    return schema;
+  }
+  return Object.fromEntries(
+    Object.entries(schema as Record<string, unknown>)
+      .filter(([key]) => !DEEPSEEK_SCHEMA_ANNOTATION_KEYS.has(key))
+      .map(([key, value]) => [key, deepSeekSchemaShape(value)]),
+  );
+}
+
+function deepSeekSchemasStructurallyEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(deepSeekSchemaShape(left)) === JSON.stringify(deepSeekSchemaShape(right));
 }
 
 function isStringConstVariant(entry: unknown): entry is { const: string } {
