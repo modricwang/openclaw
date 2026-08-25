@@ -374,11 +374,16 @@ function mergeDeepSeekDiscriminatedObjectUnion(
       if (name === discriminator) {
         continue;
       }
-      if (!deepSeekSchemasStructurallyEqual(mergedProperties[name], propertySchema)) {
+      const mergedProperty = mergeDeepSeekCompatiblePropertySchemas(
+        mergedProperties[name],
+        propertySchema,
+      );
+      if (mergedProperty === undefined) {
         throw new Error(
           `DeepSeek schema projection found incompatible property schemas: ${discriminator}.${name}`,
         );
       }
+      mergedProperties[name] = mergedProperty;
     }
   }
 
@@ -432,6 +437,52 @@ function stringConstValue(schema: unknown): string | undefined {
     return record.enum[0];
   }
   return undefined;
+}
+
+function mergeDeepSeekCompatiblePropertySchemas(
+  left: unknown,
+  right: unknown,
+): unknown | undefined {
+  if (deepSeekSchemasStructurallyEqual(left, right)) {
+    return left;
+  }
+  const leftValues = deepSeekStringSchemaValues(left);
+  const rightValues = deepSeekStringSchemaValues(right);
+  if (leftValues === undefined || rightValues === undefined) {
+    return undefined;
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const merged: Record<string, unknown> = { ...leftRecord, type: "string" };
+  delete merged.const;
+  delete merged.enum;
+  delete merged.default;
+  if (leftValues !== null && rightValues !== null) {
+    merged.enum = [...new Set([...leftValues, ...rightValues])];
+  }
+  if (leftRecord.nullable === true || rightRecord.nullable === true) {
+    merged.nullable = true;
+  }
+  return merged;
+}
+
+function deepSeekStringSchemaValues(schema: unknown): string[] | null | undefined {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+    return undefined;
+  }
+  const record = schema as Record<string, unknown>;
+  if (record.type !== "string") {
+    return undefined;
+  }
+  if (typeof record.const === "string") {
+    return [record.const];
+  }
+  if (Array.isArray(record.enum)) {
+    return record.enum.every((entry) => typeof entry === "string")
+      ? (record.enum as string[])
+      : undefined;
+  }
+  return null;
 }
 
 const DEEPSEEK_SCHEMA_ANNOTATION_KEYS = new Set(["title", "description", "default", "examples"]);

@@ -372,6 +372,61 @@ describe("buildProviderToolCompatFamilyHooks", () => {
     ).toThrow(/incompatible property schemas/);
   });
 
+  it("unions compatible reused string literals without narrowing a branch", () => {
+    const hooks = buildProviderToolCompatFamilyHooks("deepseek");
+    const tools = [
+      {
+        name: "manage_sleep",
+        description: "",
+        parameters: {
+          oneOf: [
+            {
+              type: "object",
+              properties: {
+                operation: { const: "replace_pair", type: "string" },
+                reason: {
+                  type: "string",
+                  enum: ["scheduled", "worn"],
+                  default: "scheduled",
+                },
+              },
+              required: ["operation"],
+            },
+            {
+              type: "object",
+              properties: {
+                operation: { const: "replace_single", type: "string" },
+                reason: { const: "loss", type: "string", default: "loss" },
+              },
+              required: ["operation", "reason"],
+            },
+          ],
+        },
+      },
+    ] as never;
+
+    const normalized = hooks.normalizeToolSchemas({
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
+      modelApi: "openai-completions",
+      model: {
+        provider: "deepseek",
+        api: "openai-completions",
+        id: "deepseek-v4-pro",
+      } as never,
+      tools,
+    });
+
+    expect(normalized[0]?.parameters).toEqual({
+      type: "object",
+      properties: {
+        operation: { type: "string", enum: ["replace_pair", "replace_single"] },
+        reason: { type: "string", enum: ["scheduled", "worn", "loss"] },
+      },
+      required: ["operation"],
+    });
+  });
+
   it("normalizes parameter-free and typed-object schemas for the openai family", () => {
     const hooks = buildProviderToolCompatFamilyHooks("openai");
     const tools = [
