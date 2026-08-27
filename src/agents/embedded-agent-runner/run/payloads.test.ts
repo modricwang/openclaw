@@ -1075,4 +1075,13 @@ describe("buildEmbeddedRunPayloads tool-error warnings", () => {
 
     expectSinglePayloadText(payloads, "THINKING-OFF-OK");
   });
+
+  it("uses trusted terminal owner text instead of assistant reconstruction", () => {
+    const payloads = buildPayloads({
+      assistantTexts: ["这段模型文字不应成为终态。"],
+      terminalResponseText: "已记录这次大便，结果为已排出。",
+    });
+
+    expectSinglePayloadText(payloads, "已记录这次大便，结果为已排出。");
+  });
 });

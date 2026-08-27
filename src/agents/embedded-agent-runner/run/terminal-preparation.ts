@@ -94,8 +94,11 @@ export function prepareEmbeddedRunTerminal(input: {
     .map((text) => text.trim())
     .find((text) => text.length > 0);
   const finalAssistantVisibleText =
-    resolveFinalAssistantVisibleText(terminalAssistant) ?? attemptFinalText;
-  const finalAssistantRawText = resolveFinalAssistantRawText(terminalAssistant) ?? attemptFinalText;
+    attempt.terminalResponseText ??
+    resolveFinalAssistantVisibleText(terminalAssistant) ??
+    attemptFinalText;
+  const finalAssistantRawText =
+    attempt.terminalResponseText ?? resolveFinalAssistantRawText(terminalAssistant) ?? attemptFinalText;
   // A yielded attempt ends before message_end. Its aborted tool-call assistant,
   // not an earlier completed cycle, owns paused-turn classification.
   const payloadAssistant = attempt.yieldDetected
@@ -135,6 +138,7 @@ export function prepareEmbeddedRunTerminal(input: {
     runAborted: input.terminalInterrupted,
     didSendDeterministicApprovalPrompt: attempt.didSendDeterministicApprovalPrompt,
     heartbeatToolResponse: attempt.heartbeatToolResponse,
+    terminalResponseText: attempt.terminalResponseText,
   });
   const payloadsWithToolMedia = mergeAttemptToolMediaPayloads({
     payloads,

@@ -4817,6 +4817,30 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     ).toBe("paused");
   });
 
+  it("treats trusted terminal owner text as complete without another model turn", () => {
+    const attempt = makeAttemptResult({
+      assistantTexts: [],
+      terminalResponseText: "已记录这次小便。",
+    });
+
+    expect(
+      resolveIncompleteTurnPayloadText({
+        payloadCount: 1,
+        aborted: false,
+        timedOut: false,
+        attempt,
+      }),
+    ).toBeNull();
+    expect(
+      resolveSettledToolTerminalContinuationInstruction({
+        payloadCount: 1,
+        aborted: false,
+        timedOut: false,
+        attempt,
+      }),
+    ).toBeNull();
+  });
+
   it("does not classify visible assistant prose for retry", async () => {
     mockedClassifyFailoverReason.mockReturnValue(null);
     mockedRunEmbeddedAttempt.mockResolvedValue(

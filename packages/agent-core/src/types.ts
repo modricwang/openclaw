@@ -479,6 +479,10 @@ export interface AgentToolResult<T> {
    * Early termination only happens when every finalized tool result in the batch sets this to true.
    */
   terminate?: boolean;
+  /** Trusted owner-projected text that the host delivers without another model turn. */
+  terminalResponse?: {
+    text: string;
+  };
   /** Trusted internal continuation/terminal control consumed by the current agent run. */
   runLifecycle?: AgentRunLifecycleDirective;
 }

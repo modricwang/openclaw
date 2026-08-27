@@ -1383,6 +1383,15 @@ export async function handleToolExecutionEnd(
   const result = evt.result;
   const toolSendReceiptResult = ctx.consumeToolSendReceipt?.(toolCallId);
   const observerIsError = isError || isToolResultError(result);
+  const terminalResponseText =
+    !observerIsError &&
+    result?.terminate === true &&
+    typeof result.terminalResponse?.text === "string"
+      ? result.terminalResponse.text.trim()
+      : "";
+  if (terminalResponseText) {
+    ctx.state.terminalResponseText = terminalResponseText;
+  }
   const sanitizedResult = sanitizeToolResult(result);
   const approvalUnavailable =
     isExecToolName(toolName) &&

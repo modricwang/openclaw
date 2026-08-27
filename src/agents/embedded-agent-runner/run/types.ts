@@ -181,6 +181,8 @@ export type EmbeddedRunAttemptResult = {
   assistantTranscriptOwned?: boolean;
   /** Exact idempotency key for the runtime-owned final-assistant transcript row. */
   assistantTranscriptIdempotencyKey?: string;
+  /** Exact trusted owner text delivered by the host without another model turn. */
+  terminalResponseText?: string;
   preflightRecovery?:
     | {
         route: Exclude<PreemptiveCompactionRoute, "fits">;

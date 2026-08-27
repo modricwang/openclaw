@@ -37,6 +37,7 @@ export type McpServerCatalog = {
   };
   requestTimeoutMs?: number;
   supportsParallelToolCalls?: boolean;
+  trustedTerminalResponse?: boolean;
   runLifecycleControl?: boolean;
   toolFilter?: {
     include?: string[];

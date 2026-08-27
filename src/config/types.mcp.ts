@@ -43,6 +43,11 @@ export type McpServerConfig = {
   /** Whether this server can safely handle concurrent tool calls. */
   supportsParallelToolCalls?: boolean;
   /**
+   * Trust this server to emit the exact versioned terminal-response envelope.
+   * Terminal-response servers are always materialized with sequential tool execution.
+   */
+  trustedTerminalResponse?: boolean;
+  /**
    * Trust this server to emit the exact versioned OpenClaw run-lifecycle control envelope.
    * Lifecycle-authorized servers are always materialized with sequential tool execution.
    */

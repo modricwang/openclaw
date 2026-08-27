@@ -152,6 +152,7 @@ export function completeEmbeddedAttemptResult(
     getAcceptedSessionSpawns,
     getCompactionCount,
     getHeartbeatToolResponse,
+    getTerminalResponseText,
     getItemLifecycle,
     getLastAssistantTextMessageIndex,
     getLastCompactionTokensAfter,
@@ -301,6 +302,7 @@ export function completeEmbeddedAttemptResult(
   const didSendDeterministicApprovalPromptNow = didSendDeterministicApprovalPrompt();
   const lastToolError = getLastToolError();
   const heartbeatToolResponse = getHeartbeatToolResponse();
+  const terminalResponseText = getTerminalResponseText();
   const messagingToolSourceReplyPayloads = getMessagingToolSourceReplyPayloads();
   const hasToolMediaBlockReplyNow = hasToolMediaBlockReply();
   const hasTerminalOutput = hasAttemptTerminalState({
@@ -308,6 +310,7 @@ export function completeEmbeddedAttemptResult(
     yieldDetected: state.yieldDetected,
     didSendDeterministicApprovalPrompt: didSendDeterministicApprovalPromptNow,
     heartbeatToolResponse,
+    terminalResponseText,
     lastToolError,
     toolMediaUrls: pendingToolMediaReply?.mediaUrls,
     toolAudioAsVoice: pendingToolMediaReply?.audioAsVoice,
@@ -344,6 +347,7 @@ export function completeEmbeddedAttemptResult(
     visibleBlockReplyCount +
     pendingToolMediaPayloadCount +
     messagingToolSourceReplyPayloads.length +
+    (terminalResponseText ? 1 : 0) +
     (silentToolResultReplyPayload ? 1 : 0);
   const emptyAssistantReplyIsSilent = shouldTreatEmptyAssistantReplyAsSilent({
     allowEmptyAssistantReplyAsSilent: attempt.allowEmptyAssistantReplyAsSilent,
@@ -391,6 +395,7 @@ export function completeEmbeddedAttemptResult(
     messagingToolSentTargets: getMessagingToolSentTargets(),
     messagingToolSourceReplyPayloads,
     heartbeatToolResponse,
+    terminalResponseText,
     toolMediaUrls: pendingToolMediaReply?.mediaUrls,
     toolAudioAsVoice: pendingToolMediaReply?.audioAsVoice,
     toolTrustedLocalMedia: pendingToolMediaReply?.trustedLocalMedia,

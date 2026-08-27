@@ -93,6 +93,7 @@ function toAgentToolResult(params: {
   serverName: string;
   toolName: string;
   result: CallToolResult;
+  allowTrustedTerminalResponse: boolean;
   allowRunLifecycleControl: boolean;
 }): AgentToolResult<unknown> {
   const content: AgentToolResult<unknown>["content"] = Array.isArray(params.result.content)
@@ -138,6 +139,11 @@ function toAgentToolResult(params: {
   return {
     content: normalizedContent,
     details,
+    ...resolveTrustedTerminalResponse({
+      structuredContent: params.result.structuredContent,
+      isError: params.result.isError === true,
+      allowed: params.allowTrustedTerminalResponse,
+    }),
     ...resolveTrustedRunLifecycleControl({
       structuredContent: params.result.structuredContent,
       isError: params.result.isError === true,
@@ -147,6 +153,7 @@ function toAgentToolResult(params: {
 }
 
 const RUN_LIFECYCLE_CONTRACT_ID = "openclaw_run_lifecycle_v1";
+const TERMINAL_RESPONSE_CONTRACT_ID = "openclaw_terminal_response_v1";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -238,6 +245,23 @@ function resolveTrustedRunLifecycleControl(params: {
     return { terminate: true };
   }
   return {};
+}
+
+function resolveTrustedTerminalResponse(params: {
+  structuredContent: unknown;
+  isError: boolean;
+  allowed: boolean;
+}): Pick<AgentToolResult<unknown>, "terminalResponse" | "terminate"> {
+  if (!params.allowed || params.isError) {
+    return {};
+  }
+  const payload = structuredResultPayload(params.structuredContent);
+  const envelope = payload?.terminal_response;
+  if (!isRecord(envelope) || envelope.contract_id !== TERMINAL_RESPONSE_CONTRACT_ID) {
+    return {};
+  }
+  const text = typeof envelope.text === "string" ? envelope.text.trim() : "";
+  return text ? { terminate: true, terminalResponse: { text } } : {};
 }
 
 function toJsonAgentToolResult(params: {
@@ -382,7 +406,9 @@ export function buildBundleMcpToolsFromCatalog(params: {
     }
     const server = params.catalog.servers[tool.serverName];
     const executionMode: AnyAgentTool["executionMode"] =
-      server?.supportsParallelToolCalls === true && server.runLifecycleControl !== true
+      server?.supportsParallelToolCalls === true &&
+      server.trustedTerminalResponse !== true &&
+      server.runLifecycleControl !== true
         ? "parallel"
         : "sequential";
     const safeToolName = buildSafeToolName({
@@ -541,6 +567,8 @@ export async function materializeBundleMcpToolsForRun(params: {
         serverName: tool.serverName,
         toolName: tool.toolName,
         result,
+        allowTrustedTerminalResponse:
+          catalog.servers[tool.serverName]?.trustedTerminalResponse === true,
         allowRunLifecycleControl: catalog.servers[tool.serverName]?.runLifecycleControl === true,
       });
       // Requester-scoped servers never mint app views (outlive run; no requester id on view boundary).

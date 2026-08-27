@@ -179,6 +179,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     itemStartedCount: 0,
     itemCompletedCount: 0,
     lastToolError: undefined,
+    terminalResponseText: undefined,
     blockReplyBreak: params.blockReplyBreak ?? "text_end",
     reasoningMode,
     includeReasoning: reasoningMode === "on" && canShowReasoning,
@@ -1511,6 +1512,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     getMessagingToolSourceReplyPayloads: () => messagingToolSourceReplyPayloads.slice(),
     getHeartbeatToolResponse: () =>
       state.heartbeatToolResponse ? { ...state.heartbeatToolResponse } : undefined,
+    getTerminalResponseText: () => state.terminalResponseText,
     getPendingToolMediaReply: () => readPendingToolMediaReply(state),
     hasToolMediaBlockReply: () => state.hasToolMediaBlockReply,
     getVisibleBlockReplyCount: () => state.visibleBlockReplyCount,

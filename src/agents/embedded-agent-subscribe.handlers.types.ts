@@ -87,6 +87,7 @@ export type EmbeddedAgentSubscribeState = {
   itemCompletedCount: number;
   lastToolError?: ToolErrorSummary;
   latestMcpAppChannelView?: McpAppChannelView;
+  terminalResponseText?: string;
 
   blockReplyBreak: "text_end" | "message_end";
   reasoningMode: ReasoningLevel;
@@ -335,6 +336,7 @@ type ToolHandlerState = Pick<
   | "messageToolOnlySourceReplyDelivered"
   | "messagingToolSentTargets"
   | "heartbeatToolResponse"
+  | "terminalResponseText"
   | "successfulCronAdds"
   | "deterministicApprovalPromptSent"
   | "toolExecutionSinceLastBlockReply"

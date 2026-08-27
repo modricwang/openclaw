@@ -33,6 +33,7 @@ function makeToolRuntime(
     resultText?: string;
     diagnostics?: readonly McpToolCatalogDiagnostic[];
     supportsParallelToolCalls?: boolean;
+    trustedTerminalResponse?: boolean;
     runLifecycleControl?: boolean;
   } = {},
 ): SessionMcpRuntime {
@@ -63,6 +64,7 @@ function makeToolRuntime(
           launchSummary: serverName,
           toolCount: tools.length,
           supportsParallelToolCalls: params.supportsParallelToolCalls ?? false,
+          trustedTerminalResponse: params.trustedTerminalResponse ?? false,
           runLifecycleControl: params.runLifecycleControl ?? false,
         },
       },
@@ -78,6 +80,7 @@ function makeToolRuntime(
           launchSummary: serverName,
           toolCount: tools.length,
           supportsParallelToolCalls: params.supportsParallelToolCalls ?? false,
+          trustedTerminalResponse: params.trustedTerminalResponse ?? false,
           runLifecycleControl: params.runLifecycleControl ?? false,
         },
       },
@@ -466,6 +469,54 @@ describe("createBundleMcpToolRuntime", () => {
         action: "finalize_full_chain",
         lock_id: "lock-1",
       },
+    });
+  });
+
+  it("delivers exact terminal text only from a trusted sequential server", async () => {
+    const envelope = {
+      terminal_response: {
+        contract_id: "openclaw_terminal_response_v1",
+        text: "已记录这次小便，时间为 2026-08-27T20:30:00.000+08:00。",
+      },
+    };
+    const untrusted = await materializeBundleMcpToolsForRun({
+      runtime: makeToolRuntime({
+        result: {
+          content: [],
+          structuredContent: { result: JSON.stringify(envelope) },
+          isError: false,
+        },
+      }),
+    });
+    const untrustedResult = await expectDefined(
+      untrusted.tools[0],
+      "untrusted terminal-response test tool",
+    ).execute("call-untrusted-terminal-response", {}, undefined, undefined);
+    expect(untrustedResult.terminalResponse).toBeUndefined();
+    expect(untrustedResult.terminate).toBeUndefined();
+
+    const trusted = await materializeBundleMcpToolsForRun({
+      runtime: makeToolRuntime({
+        trustedTerminalResponse: true,
+        supportsParallelToolCalls: true,
+        result: {
+          content: [],
+          structuredContent: { result: JSON.stringify(envelope) },
+          isError: false,
+        },
+      }),
+    });
+    const trustedTool = expectDefined(trusted.tools[0], "trusted terminal-response test tool");
+    const trustedResult = await trustedTool.execute(
+      "call-trusted-terminal-response",
+      {},
+      undefined,
+      undefined,
+    );
+    expect(trustedTool.executionMode).toBe("sequential");
+    expect(trustedResult.terminate).toBe(true);
+    expect(trustedResult.terminalResponse).toEqual({
+      text: envelope.terminal_response.text,
     });
   });
 

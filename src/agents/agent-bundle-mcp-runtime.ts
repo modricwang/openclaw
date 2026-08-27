@@ -66,6 +66,7 @@ type BundleMcpSession = {
   transportType: "stdio" | "sse" | "streamable-http";
   requestTimeoutMs: number;
   supportsParallelToolCalls: boolean;
+  trustedTerminalResponse: boolean;
   runLifecycleControl: boolean;
   connected: boolean;
   disconnectReason?: string;
@@ -657,6 +658,8 @@ export function createSessionMcpRuntime(params: {
                   transportType: resolved.transportType,
                   requestTimeoutMs: resolved.requestTimeoutMs,
                   supportsParallelToolCalls: resolved.supportsParallelToolCalls,
+                  trustedTerminalResponse:
+                    isMcpConfigRecord(rawServer) && rawServer.trustedTerminalResponse === true,
                   runLifecycleControl:
                     isMcpConfigRecord(rawServer) && rawServer.runLifecycleControl === true,
                   connected: false,
@@ -709,6 +712,8 @@ export function createSessionMcpRuntime(params: {
                   toolCount: exposedTools.length,
                   requestTimeoutMs: resolved.requestTimeoutMs,
                   supportsParallelToolCalls: resolved.supportsParallelToolCalls,
+                  trustedTerminalResponse:
+                    isMcpConfigRecord(rawServer) && rawServer.trustedTerminalResponse === true,
                   runLifecycleControl:
                     isMcpConfigRecord(rawServer) && rawServer.runLifecycleControl === true,
                   ...(capabilities.resources ? { resources: capabilities.resources } : {}),

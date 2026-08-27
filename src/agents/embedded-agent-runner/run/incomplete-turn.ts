@@ -45,6 +45,7 @@ type IncompleteTurnAttempt = Pick<
   | "yieldDetected"
   | "didSendDeterministicApprovalPrompt"
   | "heartbeatToolResponse"
+  | "terminalResponseText"
   | "toolMediaUrls"
   | "toolAudioAsVoice"
   | "toolTrustedLocalMedia"
@@ -177,6 +178,7 @@ type TerminalAttemptState = Pick<
   | "yieldDetected"
   | "didSendDeterministicApprovalPrompt"
   | "heartbeatToolResponse"
+  | "terminalResponseText"
   | "lastToolError"
   | "toolMediaUrls"
   | "toolAudioAsVoice"
@@ -200,7 +202,8 @@ type TerminalAttemptState = Pick<
 
 export function hasAttemptTerminalState(attempt: TerminalAttemptState): boolean {
   return Boolean(
-    attempt.clientToolCalls ||
+    attempt.terminalResponseText ||
+      attempt.clientToolCalls ||
     attempt.yieldDetected ||
     attempt.didSendDeterministicApprovalPrompt ||
     attempt.heartbeatToolResponse ||
@@ -235,6 +238,9 @@ export function resolveIncompleteTurnPayloadText(params: {
   hadPotentialSideEffects?: boolean;
   attempt: IncompleteTurnAttempt;
 }): string | null {
+  if (params.attempt.terminalResponseText) {
+    return null;
+  }
   // Prefer the current attempt's terminal message. The session fallback can
   // still point at the pre-tool turn after a post-tool answer completes. (#80918)
   const assistant = params.attempt.currentAttemptAssistant ?? params.attempt.lastAssistant;
@@ -779,6 +785,9 @@ export function resolveSettledToolTerminalContinuationInstruction(params: {
   timedOut: boolean;
   attempt: IncompleteTurnAttempt;
 }): string | null {
+  if (params.attempt.terminalResponseText) {
+    return null;
+  }
   const assistant = params.attempt.currentAttemptAssistant ?? params.attempt.lastAssistant;
   const currentAttemptAssistant = params.attempt.currentAttemptAssistant;
   const nonVisibleStopAfterSettledTools = Boolean(

@@ -529,6 +529,7 @@ export function buildEmbeddedRunPayloads(params: {
   runAborted?: boolean;
   didSendDeterministicApprovalPrompt?: boolean;
   heartbeatToolResponse?: HeartbeatToolResponse;
+  terminalResponseText?: string;
 }): ReplyPayload[] {
   const heartbeatTerminalToolFailure =
     params.isHeartbeatTrigger === true &&
@@ -737,10 +738,14 @@ export function buildEmbeddedRunPayloads(params: {
     fallbackAnswerSourceText.length > 0 &&
     normalizedFallbackAnswerSourceText.length > 0;
   const hasAssistantTextPayload = nonEmptyAssistantTexts.length > 0;
+  const terminalResponseText =
+    typeof params.terminalResponseText === "string" ? params.terminalResponseText.trim() : "";
   const answerTexts =
     suppressAssistantArtifacts || runAborted
       ? []
-      : (shouldUseCanonicalFinalAnswer
+      : terminalResponseText
+        ? [terminalResponseText]
+        : (shouldUseCanonicalFinalAnswer
           ? [fallbackAnswerSourceText]
           : shouldPreferRawAnswerText && fallbackRawAnswerText
             ? [fallbackRawAnswerText]
