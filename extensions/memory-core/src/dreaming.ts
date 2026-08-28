@@ -102,6 +102,7 @@ type CronServiceLike = {
 type ShortTermPromotionDreamingConfig = {
   enabled: boolean;
   cron: string;
+  writeMode: "apply" | "report-only";
   timezone?: string;
   limit: number;
   minScore: number;
@@ -114,6 +115,7 @@ type ShortTermPromotionDreamingConfig = {
   storage?: {
     mode: "inline" | "separate" | "both";
     separateReports: boolean;
+    dreamsPath?: string;
   };
   execution?: {
     model?: string;
@@ -155,7 +157,11 @@ function formatRepairSummary(repair: {
 function resolveManagedCronDescription(config: ShortTermPromotionDreamingConfig): string {
   const recencyHalfLifeDays =
     config.recencyHalfLifeDays ?? DEFAULT_MEMORY_DREAMING_RECENCY_HALF_LIFE_DAYS;
-  return `${MANAGED_DREAMING_CRON_TAG} Promote weighted short-term recalls into MEMORY.md (limit=${config.limit}, minScore=${config.minScore.toFixed(3)}, minRecallCount=${config.minRecallCount}, minUniqueQueries=${config.minUniqueQueries}, recencyHalfLifeDays=${recencyHalfLifeDays}, maxAgeDays=${config.maxAgeDays ?? "none"}).`;
+  const action =
+    config.writeMode === "report-only"
+      ? "Rank weighted short-term recalls for source-owner review"
+      : "Promote weighted short-term recalls into MEMORY.md";
+  return `${MANAGED_DREAMING_CRON_TAG} ${action} (limit=${config.limit}, minScore=${config.minScore.toFixed(3)}, minRecallCount=${config.minRecallCount}, minUniqueQueries=${config.minUniqueQueries}, recencyHalfLifeDays=${recencyHalfLifeDays}, maxAgeDays=${config.maxAgeDays ?? "none"}).`;
 }
 
 function buildManagedDreamingCronJob(
@@ -390,6 +396,7 @@ export function resolveShortTermPromotionDreamingConfig(params: {
   return {
     enabled: resolved.enabled,
     cron: resolved.cron,
+    writeMode: resolved.writeMode,
     ...(resolved.timezone ? { timezone: resolved.timezone } : {}),
     limit: resolved.limit,
     minScore: resolved.minScore,
@@ -558,6 +565,7 @@ async function runShortTermDreamingPromotionIfTriggered(params: {
     { runDreamingSweepPhases },
     {
       applyShortTermPromotions,
+      reconcileShortTermPromotionMarkers,
       repairShortTermPromotionArtifacts,
       rankShortTermPromotionCandidates,
     },
@@ -596,6 +604,13 @@ async function runShortTermDreamingPromotionIfTriggered(params: {
         );
         reportLines.push(`- Repaired recall artifacts: ${formatRepairSummary(repair)}.`);
       }
+      const reconciled =
+        params.config.writeMode === "report-only"
+          ? await reconcileShortTermPromotionMarkers({ workspaceDir, nowMs: sweepNowMs })
+          : { memoryPath: `${workspaceDir}/MEMORY.md`, reconciled: 0, candidateKeys: [] };
+      if (reconciled.reconciled > 0) {
+        reportLines.push(`- Reconciled ${reconciled.reconciled} source-owned MEMORY.md marker(s).`);
+      }
       const candidates = await rankShortTermPromotionCandidates({
         workspaceDir,
         limit: params.config.limit,
@@ -622,20 +637,35 @@ async function runShortTermDreamingPromotionIfTriggered(params: {
           `memory-core: dreaming candidate details [workspace=${workspaceDir}] ${candidateSummary}`,
         );
       }
-      const applied = await applyShortTermPromotions({
-        workspaceDir,
-        candidates,
-        limit: params.config.limit,
-        minScore: params.config.minScore,
-        minRecallCount: params.config.minRecallCount,
-        minUniqueQueries: params.config.minUniqueQueries,
-        maxAgeDays: params.config.maxAgeDays,
-        maxPromotedSnippetTokens: params.config.maxPromotedSnippetTokens,
-        timezone: params.config.timezone,
-        nowMs: sweepNowMs,
-      });
+      const applied =
+        params.config.writeMode === "apply"
+          ? await applyShortTermPromotions({
+              workspaceDir,
+              candidates,
+              limit: params.config.limit,
+              minScore: params.config.minScore,
+              minRecallCount: params.config.minRecallCount,
+              minUniqueQueries: params.config.minUniqueQueries,
+              maxAgeDays: params.config.maxAgeDays,
+              maxPromotedSnippetTokens: params.config.maxPromotedSnippetTokens,
+              timezone: params.config.timezone,
+              nowMs: sweepNowMs,
+            })
+          : {
+              memoryPath: reconciled.memoryPath,
+              applied: 0,
+              appended: 0,
+              reconciledExisting: reconciled.reconciled,
+              appliedCandidates: [],
+              compactedSections: 0,
+              compactedDates: [],
+            };
       totalApplied += applied.applied;
-      reportLines.push(`- Promoted ${applied.applied} candidate(s) into MEMORY.md.`);
+      reportLines.push(
+        params.config.writeMode === "apply"
+          ? `- Promoted ${applied.applied} candidate(s) into MEMORY.md.`
+          : `- Deferred ${candidates.length} candidate(s) for source-owner review; MEMORY.md unchanged.`,
+      );
       if (params.config.verboseLogging) {
         const appliedSummary =
           applied.appliedCandidates.length > 0
@@ -667,6 +697,9 @@ async function runShortTermDreamingPromotionIfTriggered(params: {
         if (!params.subagent) {
           await appendFallbackNarrativeEntry({
             workspaceDir,
+            ...(params.config.storage?.dreamsPath
+              ? { dreamsPath: params.config.storage.dreamsPath }
+              : {}),
             data,
             nowMs: sweepNowMs,
             timezone: params.config.timezone,
@@ -677,6 +710,9 @@ async function runShortTermDreamingPromotionIfTriggered(params: {
           runDetachedDreamNarrative({
             subagent: params.subagent,
             workspaceDir,
+            ...(params.config.storage?.dreamsPath
+              ? { dreamsPath: params.config.storage.dreamsPath }
+              : {}),
             data,
             nowMs: sweepNowMs,
             timezone: params.config.timezone,
@@ -687,6 +723,9 @@ async function runShortTermDreamingPromotionIfTriggered(params: {
           await generateAndAppendDreamNarrative({
             subagent: params.subagent,
             workspaceDir,
+            ...(params.config.storage?.dreamsPath
+              ? { dreamsPath: params.config.storage.dreamsPath }
+              : {}),
             data,
             nowMs: sweepNowMs,
             timezone: params.config.timezone,

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { extractErrorCode } from "openclaw/plugin-sdk/error-runtime";
+import { resolveDreamsPath } from "./dreaming-dreams-file.js";
 import {
   clearMemoryCoreWorkspaceNamespace,
   DREAMING_SESSION_INGESTION_FILES_NAMESPACE,
@@ -60,7 +61,22 @@ function requireAbsoluteWorkspaceDir(rawWorkspaceDir: string): string {
   return path.resolve(trimmed);
 }
 
-async function resolveExistingDreamsPath(workspaceDir: string): Promise<string | undefined> {
+async function resolveExistingDreamsPath(
+  workspaceDir: string,
+  configuredPath?: string,
+): Promise<string | undefined> {
+  if (configuredPath) {
+    const candidate = await resolveDreamsPath(workspaceDir, configuredPath);
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return undefined;
+      }
+      throw err;
+    }
+  }
   for (const fileName of DREAMS_FILENAMES) {
     const candidate = path.join(workspaceDir, fileName);
     try {
@@ -146,9 +162,10 @@ async function clearSessionIngestionState(workspaceDir: string): Promise<void> {
 
 export async function auditDreamingArtifacts(params: {
   workspaceDir: string;
+  dreamsPath?: string;
 }): Promise<DreamingArtifactsAuditSummary> {
   const workspaceDir = requireAbsoluteWorkspaceDir(params.workspaceDir);
-  const dreamsPath = await resolveExistingDreamsPath(workspaceDir);
+  const dreamsPath = await resolveExistingDreamsPath(workspaceDir, params.dreamsPath);
   const sessionCorpusDir = path.join(workspaceDir, SESSION_CORPUS_RELATIVE_DIR);
   const sessionIngestionPath = path.join(workspaceDir, SESSION_INGESTION_RELATIVE_PATH);
   const issues: DreamingArtifactsAuditIssue[] = [];
@@ -256,6 +273,7 @@ export async function auditDreamingArtifacts(params: {
 
 export async function repairDreamingArtifacts(params: {
   workspaceDir: string;
+  dreamsPath?: string;
   archiveDiary?: boolean;
   now?: Date;
 }): Promise<RepairDreamingArtifactsResult> {
@@ -314,7 +332,7 @@ export async function repairDreamingArtifacts(params: {
   }
 
   if (params.archiveDiary) {
-    const dreamsPath = await resolveExistingDreamsPath(workspaceDir);
+    const dreamsPath = await resolveExistingDreamsPath(workspaceDir, params.dreamsPath);
     if (dreamsPath) {
       const dreamsDestination = await archivePathIfPresent(dreamsPath);
       if (dreamsDestination) {

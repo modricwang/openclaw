@@ -29,6 +29,12 @@ import { resolveMemoryCoreNowMs, resolveMemoryCoreTimestamp } from "./time.js";
 const PROMOTION_MARKER_PREFIX = "openclaw-memory-promotion:";
 const PROMOTED_SNIPPET_CHARS_PER_TOKEN_ESTIMATE = 4;
 
+export type ReconcileShortTermPromotionMarkersResult = {
+  memoryPath: string;
+  reconciled: number;
+  candidateKeys: string[];
+};
+
 function buildPromotionSection(
   candidates: PromotionCandidate[],
   nowMs: number,
@@ -168,6 +174,55 @@ function extractPromotionMarkers(memoryText: string): Set<string> {
     }
   }
   return markers;
+}
+
+export async function reconcileShortTermPromotionMarkers(params: {
+  workspaceDir: string;
+  nowMs?: number;
+}): Promise<ReconcileShortTermPromotionMarkersResult> {
+  const workspaceDir = params.workspaceDir.trim();
+  const nowMs = resolveMemoryCoreNowMs(params.nowMs);
+  const nowIso = resolveMemoryCoreTimestamp(nowMs);
+  const memoryPath = path.join(workspaceDir, "MEMORY.md");
+
+  return await withShortTermLock(workspaceDir, async () => {
+    const store = await readStore(workspaceDir, nowIso);
+    const memoryWritePath = await resolveMemoryWritePath(memoryPath);
+    const existingMemory = await fs.readFile(memoryWritePath, "utf-8").catch((err: unknown) => {
+      if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+        return "";
+      }
+      throw err;
+    });
+    const existingMarkers = extractPromotionMarkers(existingMemory);
+    const candidateKeys = Object.entries(store.entries)
+      .filter(([key, entry]) => !entry.promotedAt && existingMarkers.has(key))
+      .map(([key]) => key)
+      .toSorted();
+    if (candidateKeys.length === 0) {
+      return { memoryPath, reconciled: 0, candidateKeys: [] };
+    }
+    for (const key of candidateKeys) {
+      const entry = store.entries[key];
+      if (entry) {
+        entry.promotedAt = nowIso;
+      }
+    }
+    store.updatedAt = nowIso;
+    await writeStore(workspaceDir, store);
+    await appendMemoryHostEvent(workspaceDir, {
+      type: "memory.promotion.reconciled",
+      timestamp: nowIso,
+      memoryPath,
+      reconciled: candidateKeys.length,
+      candidateKeys,
+    });
+    return {
+      memoryPath,
+      reconciled: candidateKeys.length,
+      candidateKeys,
+    };
+  });
 }
 
 export async function applyShortTermPromotions(

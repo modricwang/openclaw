@@ -29,6 +29,15 @@
       "label": "Dreaming Model",
       "placeholder": "anthropic/claude-sonnet-4-6",
       "help": "Optional provider/model override for Dream Diary narrative subagent runs. Requires plugins.entries.memory-core.subagent.allowModelOverride."
+    },
+    "dreaming.storage.dreamsPath": {
+      "label": "Dream Diary Path",
+      "placeholder": "memory/dreaming/DREAMS.md",
+      "help": "Optional workspace-relative path for Dream Diary and managed deep output."
+    },
+    "dreaming.phases.deep.writeMode": {
+      "label": "Deep Write Mode",
+      "help": "Use report-only when MEMORY.md is maintained by an external source owner."
     }
   },
   "configSchema": {
@@ -64,6 +73,11 @@
               },
               "separateReports": {
                 "type": "boolean"
+              },
+              "dreamsPath": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Optional workspace-relative path for Dream Diary and managed deep-sleep output. Defaults to DREAMS.md."
               }
             }
           },
@@ -92,6 +106,11 @@
                 "properties": {
                   "enabled": {
                     "type": "boolean"
+                  },
+                  "writeMode": {
+                    "type": "string",
+                    "enum": ["apply", "report-only"],
+                    "description": "Whether scheduled deep dreaming writes approved candidates into MEMORY.md or produces review-only output."
                   },
                   "lookbackDays": {
                     "type": "integer",

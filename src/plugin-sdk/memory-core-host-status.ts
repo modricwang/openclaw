@@ -12,6 +12,7 @@ export {
   isSameMemoryDreamingDay,
   resolveMemoryDeepDreamingConfig,
   resolveMemoryDreamingConfig,
+  resolveMemoryDreamingDreamsPath,
   resolveMemoryDreamingWorkspaces,
   resolveMemoryLightDreamingConfig,
   resolveMemoryRemDreamingConfig,
@@ -33,6 +34,7 @@ export {
   MEMORY_DREAMING_SYSTEM_EVENT_TEXT,
 } from "../memory-host-sdk/dreaming.js";
 export type {
+  MemoryDreamingDeepWriteMode,
   MemoryDreamingPhaseName,
   MemoryDreamingStorageConfig,
 } from "../memory-host-sdk/dreaming.js";

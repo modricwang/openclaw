@@ -11,6 +11,7 @@ import {
   resolveMemoryLightDreamingConfig,
   resolveMemoryDreamingPluginConfig,
   resolveMemoryDreamingConfig,
+  resolveMemoryDreamingDreamsPath,
   resolveMemoryDreamingWorkspaces,
   resolveMemoryRemDreamingConfig,
 } from "../../memory-host-sdk/dreaming.js";
@@ -52,6 +53,7 @@ type DoctorMemoryLightDreamingPayload = DoctorMemoryDreamingPhasePayload & {
 };
 
 type DoctorMemoryDeepDreamingPayload = DoctorMemoryDreamingPhasePayload & {
+  writeMode: "apply" | "report-only";
   minScore: number;
   minRecallCount: number;
   minUniqueQueries: number;
@@ -89,6 +91,7 @@ type DoctorMemoryDreamingPayload = {
   verboseLogging: boolean;
   storageMode: "inline" | "separate" | "both";
   separateReports: boolean;
+  dreamsPath?: string;
   shortTermCount: number;
   recallSignalCount: number;
   dailySignalCount: number;
@@ -329,6 +332,7 @@ function resolveDreamingConfig(
     verboseLogging: resolved.verboseLogging,
     storageMode: resolved.storage.mode,
     separateReports: resolved.storage.separateReports,
+    ...(resolved.storage.dreamsPath ? { dreamsPath: resolved.storage.dreamsPath } : {}),
     shortTermEntries: [],
     signalEntries: [],
     promotedEntries: [],
@@ -343,6 +347,7 @@ function resolveDreamingConfig(
       deep: {
         enabled: deep.enabled,
         cron: deep.cron,
+        writeMode: deep.writeMode,
         limit: deep.limit,
         minScore: deep.minScore,
         minRecallCount: deep.minRecallCount,
@@ -658,9 +663,21 @@ async function resolveAllManagedDreamingCronStatuses(context: {
 
 async function readDreamDiary(
   workspaceDir: string,
+  configuredPath?: string,
 ): Promise<Omit<DoctorMemoryDreamDiaryPayload, "agentId">> {
-  for (const name of DREAM_DIARY_FILE_NAMES) {
-    const filePath = path.join(workspaceDir, name);
+  const candidates = configuredPath
+    ? [
+        {
+          name: configuredPath,
+          filePath: resolveMemoryDreamingDreamsPath(workspaceDir, configuredPath),
+        },
+      ]
+    : DREAM_DIARY_FILE_NAMES.map((name) => ({
+        name,
+        filePath: path.join(workspaceDir, name),
+      }));
+  for (const candidate of candidates) {
+    const { name, filePath } = candidate;
     let stat;
     try {
       stat = await fs.lstat(filePath);
@@ -695,8 +712,15 @@ async function readDreamDiary(
   }
   return {
     found: false,
-    path: DREAM_DIARY_FILE_NAMES[0],
+    path: configuredPath ?? DREAM_DIARY_FILE_NAMES[0],
   };
+}
+
+function resolveDoctorDreamsPath(cfg: OpenClawConfig): string | undefined {
+  return resolveMemoryDreamingConfig({
+    pluginConfig: resolveMemoryDreamingPluginConfig(cfg),
+    cfg,
+  }).storage.dreamsPath;
 }
 
 function shouldProbeMemoryEmbeddings(params: unknown): boolean {
@@ -847,8 +871,9 @@ export const doctorHandlers: GatewayRequestHandlers = {
     }
   },
   "doctor.memory.dreamDiary": async ({ respond, context, params }) => {
-    const { agentId, workspaceDir } = resolveDoctorMemoryTarget(context, params);
-    const dreamDiary = await readDreamDiary(workspaceDir);
+    const { cfg, agentId, workspaceDir } = resolveDoctorMemoryTarget(context, params);
+    const dreamsPath = resolveDoctorDreamsPath(cfg);
+    const dreamDiary = await readDreamDiary(workspaceDir, dreamsPath);
     const payload: DoctorMemoryDreamDiaryPayload = {
       agentId,
       ...dreamDiary,
@@ -857,10 +882,11 @@ export const doctorHandlers: GatewayRequestHandlers = {
   },
   "doctor.memory.backfillDreamDiary": async ({ respond, context, params }) => {
     const { cfg, agentId, workspaceDir } = resolveDoctorMemoryTarget(context, params);
+    const dreamsPath = resolveDoctorDreamsPath(cfg);
     const memoryDir = path.join(workspaceDir, "memory");
     const sourceFiles = await listWorkspaceDailyFiles(memoryDir);
     if (sourceFiles.length === 0) {
-      const dreamDiary = await readDreamDiary(workspaceDir);
+      const dreamDiary = await readDreamDiary(workspaceDir, dreamsPath);
       const payload: DoctorMemoryDreamActionPayload = {
         agentId,
         path: dreamDiary.path,
@@ -896,10 +922,11 @@ export const doctorHandlers: GatewayRequestHandlers = {
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
     const written = await writeBackfillDiaryEntries({
       workspaceDir,
+      ...(dreamsPath ? { dreamsPath } : {}),
       entries,
       timezone: remConfig.timezone,
     });
-    const dreamDiary = await readDreamDiary(workspaceDir);
+    const dreamDiary = await readDreamDiary(workspaceDir, dreamsPath);
     const payload: DoctorMemoryDreamActionPayload = {
       agentId,
       path: dreamDiary.path,
@@ -912,9 +939,13 @@ export const doctorHandlers: GatewayRequestHandlers = {
     respond(true, payload, undefined);
   },
   "doctor.memory.resetDreamDiary": async ({ respond, context, params }) => {
-    const { agentId, workspaceDir } = resolveDoctorMemoryTarget(context, params);
-    const removed = await removeBackfillDiaryEntries({ workspaceDir });
-    const dreamDiary = await readDreamDiary(workspaceDir);
+    const { cfg, agentId, workspaceDir } = resolveDoctorMemoryTarget(context, params);
+    const dreamsPath = resolveDoctorDreamsPath(cfg);
+    const removed = await removeBackfillDiaryEntries({
+      workspaceDir,
+      ...(dreamsPath ? { dreamsPath } : {}),
+    });
+    const dreamDiary = await readDreamDiary(workspaceDir, dreamsPath);
     const payload: DoctorMemoryDreamActionPayload = {
       agentId,
       path: dreamDiary.path,
@@ -935,8 +966,12 @@ export const doctorHandlers: GatewayRequestHandlers = {
     respond(true, payload, undefined);
   },
   "doctor.memory.repairDreamingArtifacts": async ({ respond, context, params }) => {
-    const { agentId, workspaceDir } = resolveDoctorMemoryTarget(context, params);
-    const repair = await repairDreamingArtifacts({ workspaceDir });
+    const { cfg, agentId, workspaceDir } = resolveDoctorMemoryTarget(context, params);
+    const dreamsPath = resolveDoctorDreamsPath(cfg);
+    const repair = await repairDreamingArtifacts({
+      workspaceDir,
+      ...(dreamsPath ? { dreamsPath } : {}),
+    });
     const payload: DoctorMemoryDreamActionPayload = {
       agentId,
       action: "repairDreamingArtifacts",
@@ -950,9 +985,13 @@ export const doctorHandlers: GatewayRequestHandlers = {
     respond(true, payload, undefined);
   },
   "doctor.memory.dedupeDreamDiary": async ({ respond, context, params }) => {
-    const { agentId, workspaceDir } = resolveDoctorMemoryTarget(context, params);
-    const dedupe = await dedupeDreamDiaryEntries({ workspaceDir });
-    const dreamDiary = await readDreamDiary(workspaceDir);
+    const { cfg, agentId, workspaceDir } = resolveDoctorMemoryTarget(context, params);
+    const dreamsPath = resolveDoctorDreamsPath(cfg);
+    const dedupe = await dedupeDreamDiaryEntries({
+      workspaceDir,
+      ...(dreamsPath ? { dreamsPath } : {}),
+    });
+    const dreamDiary = await readDreamDiary(workspaceDir, dreamsPath);
     const payload: DoctorMemoryDreamActionPayload = {
       agentId,
       action: "dedupeDreamDiary",

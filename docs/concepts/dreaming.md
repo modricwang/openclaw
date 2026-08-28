@@ -21,6 +21,13 @@ Dreaming is **opt-in** and disabled by default.
 
 Long-term promotion still writes only to `MEMORY.md`.
 
+Git-managed workspaces can set `dreaming.storage.dreamsPath` to a safe
+workspace-relative file such as `memory/dreaming/DREAMS.md`. Set
+`dreaming.phases.deep.writeMode` to `report-only` when durable candidates
+must be reviewed and committed by an external source owner before they enter
+`MEMORY.md`. Both settings are opt-in; the default behavior remains
+`DREAMS.md` plus automatic `MEMORY.md` promotion.
+
 ## Phase model
 
 Dreaming runs three cooperative phases per sweep, in order: light -> REM -> deep. These are internal implementation phases, not separate user-configured modes.
@@ -215,6 +222,12 @@ All settings live under `plugins.entries.memory-core.config.dreaming`.
 </ParamField>
 <ParamField path="phases.deep.maxPromotedSnippetTokens" type="number" default="160">
   Maximum estimated token count kept from each short-term recall snippet promoted into `MEMORY.md`. Ranking provenance remains visible.
+</ParamField>
+<ParamField path="storage.dreamsPath" type="string">
+  Optional workspace-relative Dream Diary path. Absolute paths and paths that escape the workspace are rejected.
+</ParamField>
+<ParamField path="phases.deep.writeMode" type="string" default="apply">
+  Use `report-only` to rank and report durable candidates without modifying `MEMORY.md`.
 </ParamField>
 
 <Warning>

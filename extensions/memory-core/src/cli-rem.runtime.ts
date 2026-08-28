@@ -217,7 +217,10 @@ export async function runMemoryRemBackfill(
       }
       if (opts.rollback || opts.rollbackShortTerm) {
         const diaryRollback = opts.rollback
-          ? await removeBackfillDiaryEntries({ workspaceDir })
+          ? await removeBackfillDiaryEntries({
+              workspaceDir,
+              ...(remConfig.storage.dreamsPath ? { dreamsPath: remConfig.storage.dreamsPath } : {}),
+            })
           : null;
         const shortTermRollback = opts.rollbackShortTerm
           ? await removeGroundedShortTermCandidates({ workspaceDir })
@@ -317,6 +320,7 @@ export async function runMemoryRemBackfill(
           .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
         const written = await writeBackfillDiaryEntries({
           workspaceDir,
+          ...(remConfig.storage.dreamsPath ? { dreamsPath: remConfig.storage.dreamsPath } : {}),
           entries,
           timezone: remConfig.timezone,
         });

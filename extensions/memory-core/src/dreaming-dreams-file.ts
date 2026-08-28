@@ -4,6 +4,7 @@ import path from "node:path";
 import { createAsyncLock } from "openclaw/plugin-sdk/async-lock-runtime";
 import { extractErrorCode } from "openclaw/plugin-sdk/error-runtime";
 import { resolveGlobalMap } from "openclaw/plugin-sdk/global-singleton";
+import { resolveMemoryDreamingDreamsPath } from "openclaw/plugin-sdk/memory-core-host-status";
 import { replaceManagedMarkdownBlock } from "openclaw/plugin-sdk/memory-host-markdown";
 import { readRegularFile, replaceFileAtomic } from "openclaw/plugin-sdk/security-runtime";
 
@@ -19,7 +20,13 @@ type DreamsFileLockEntry = {
 
 const dreamsFileLocks = resolveGlobalMap<string, DreamsFileLockEntry>(DREAMS_FILE_LOCKS_KEY);
 
-export async function resolveDreamsPath(workspaceDir: string): Promise<string> {
+export async function resolveDreamsPath(
+  workspaceDir: string,
+  configuredPath?: string,
+): Promise<string> {
+  if (configuredPath) {
+    return resolveMemoryDreamingDreamsPath(workspaceDir, configuredPath);
+  }
   for (const name of DREAMS_FILENAMES) {
     const target = path.join(workspaceDir, name);
     try {
@@ -93,6 +100,7 @@ async function writeDreamsFileAtomic(dreamsPath: string, content: string): Promi
 
 export async function updateDreamsFile<T>(params: {
   workspaceDir: string;
+  dreamsPath?: string;
   updater: (
     existing: string,
     dreamsPath: string,
@@ -104,7 +112,7 @@ export async function updateDreamsFile<T>(params: {
         shouldWrite?: boolean;
       };
 }): Promise<T> {
-  const dreamsPath = await resolveDreamsPath(params.workspaceDir);
+  const dreamsPath = await resolveDreamsPath(params.workspaceDir, params.dreamsPath);
   await fs.mkdir(path.dirname(dreamsPath), { recursive: true });
   let lockEntry = dreamsFileLocks.get(dreamsPath);
   if (!lockEntry) {
@@ -131,11 +139,13 @@ export async function updateDreamsFile<T>(params: {
 
 export async function updateDeepDreamsFile(params: {
   workspaceDir: string;
+  dreamsPath?: string;
   bodyLines: string[];
 }): Promise<string> {
   const body = params.bodyLines.length > 0 ? params.bodyLines.join("\n") : "- No durable changes.";
   return await updateDreamsFile({
     workspaceDir: params.workspaceDir,
+    ...(params.dreamsPath ? { dreamsPath: params.dreamsPath } : {}),
     updater: (existing, dreamsPath) => ({
       content: replaceManagedMarkdownBlock({
         original: existing,

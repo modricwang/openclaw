@@ -28,6 +28,10 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { DoctorMemoryEmbeddingRuntimePayload } from "../gateway/server-methods/doctor.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import {
+  resolveMemoryDreamingConfig,
+  resolveMemoryDreamingPluginConfig,
+} from "../memory-host-sdk/dreaming.js";
+import {
   checkQmdBinaryAvailability,
   resolveQmdBinaryUnavailableReason,
 } from "../memory-host-sdk/engine-qmd.js";
@@ -320,6 +324,10 @@ function buildDreamingArtifactIssueNote(audit: DreamingArtifactsAuditSummary): s
 }
 
 export async function noteMemoryRecallHealth(cfg: OpenClawConfig): Promise<void> {
+  const dreamingStorage = resolveMemoryDreamingConfig({
+    pluginConfig: resolveMemoryDreamingPluginConfig(cfg),
+    cfg,
+  }).storage;
   const scopes = resolveMemoryDoctorAgentScopes(cfg);
   const labelAgents = scopes.length > 1;
   for (const scope of scopes) {
@@ -343,7 +351,10 @@ export async function noteMemoryRecallHealth(cfg: OpenClawConfig): Promise<void>
       if (message) {
         note(formatAgentMessage(scope.agentId, labelAgents, message), "Memory search");
       }
-      const dreamingAudit = await auditDreamingArtifacts({ workspaceDir });
+      const dreamingAudit = await auditDreamingArtifacts({
+        workspaceDir,
+        ...(dreamingStorage.dreamsPath ? { dreamsPath: dreamingStorage.dreamsPath } : {}),
+      });
       const dreamingMessage = buildDreamingArtifactIssueNote(dreamingAudit);
       if (dreamingMessage) {
         note(formatAgentMessage(scope.agentId, labelAgents, dreamingMessage), "Memory search");
@@ -365,6 +376,10 @@ export async function maybeRepairMemoryRecallHealth(params: {
   cfg: OpenClawConfig;
   prompter: DoctorPrompter;
 }): Promise<void> {
+  const dreamingStorage = resolveMemoryDreamingConfig({
+    pluginConfig: resolveMemoryDreamingPluginConfig(params.cfg),
+    cfg: params.cfg,
+  }).storage;
   const scopes = resolveMemoryDoctorAgentScopes(params.cfg);
   const labelAgents = scopes.length > 1;
   for (const scope of scopes) {
@@ -430,7 +445,10 @@ export async function maybeRepairMemoryRecallHealth(params: {
         }
       }
 
-      const dreamingAudit = await auditDreamingArtifacts({ workspaceDir });
+      const dreamingAudit = await auditDreamingArtifacts({
+        workspaceDir,
+        ...(dreamingStorage.dreamsPath ? { dreamsPath: dreamingStorage.dreamsPath } : {}),
+      });
       const hasFixableDreamingIssue = dreamingAudit.issues.some((issue) => issue.fixable);
       if (!hasFixableDreamingIssue) {
         continue;
@@ -446,7 +464,10 @@ export async function maybeRepairMemoryRecallHealth(params: {
       if (!approvedDreamingRepair) {
         continue;
       }
-      const dreamingRepair = await repairDreamingArtifacts({ workspaceDir });
+      const dreamingRepair = await repairDreamingArtifacts({
+        workspaceDir,
+        ...(dreamingStorage.dreamsPath ? { dreamsPath: dreamingStorage.dreamsPath } : {}),
+      });
       if (!dreamingRepair.changed) {
         continue;
       }

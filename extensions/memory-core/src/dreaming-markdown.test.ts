@@ -166,6 +166,32 @@ describe("dreaming markdown storage", () => {
     expect(dreamsContent).toContain("- Promoted: durable preference");
   });
 
+  it("writes managed deep output to a configured workspace-relative diary", async () => {
+    const workspaceDir = await createTempWorkspace("openclaw-dreaming-markdown-");
+    const trackedDreamsPath = path.join(workspaceDir, "DREAMS.md");
+    await fs.writeFile(trackedDreamsPath, "# Source-owned dreams contract\n", "utf-8");
+
+    await writeDeepDreamingReport({
+      workspaceDir,
+      bodyLines: ["- Review-only candidate."],
+      storage: {
+        mode: "separate",
+        separateReports: false,
+        dreamsPath: "memory/dreaming/DREAMS.md",
+      },
+      nowMs,
+      timezone,
+    });
+
+    await expect(fs.readFile(trackedDreamsPath, "utf-8")).resolves.toBe(
+      "# Source-owned dreams contract\n",
+    );
+    const runtimeDreamsPath = path.join(workspaceDir, "memory", "dreaming", "DREAMS.md");
+    const runtimeDreams = await fs.readFile(runtimeDreamsPath, "utf-8");
+    expect(runtimeDreams).toContain("## Deep Sleep");
+    expect(runtimeDreams).toContain("- Review-only candidate.");
+  });
+
   it("writes the deep summary to DREAMS.md without a separate report in inline mode", async () => {
     const workspaceDir = await createTempWorkspace("openclaw-dreaming-markdown-");
 

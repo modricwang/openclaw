@@ -7,6 +7,7 @@ import {
   resolveMemoryDreamingPluginConfig,
   resolveMemoryDreamingPluginId,
   resolveMemoryDreamingConfig,
+  resolveMemoryDreamingDreamsPath,
   resolveMemoryDreamingWorkspaces,
 } from "./dreaming.js";
 
@@ -22,9 +23,11 @@ describe("memory dreaming host helpers", () => {
           storage: {
             mode: "both",
             separateReports: true,
+            dreamsPath: "memory/dreaming/DREAMS.md",
           },
           phases: {
             deep: {
+              writeMode: "report-only",
               limit: "5",
               minScore: "0.9",
               minRecallCount: "4",
@@ -47,7 +50,9 @@ describe("memory dreaming host helpers", () => {
     expect(resolved.storage).toEqual({
       mode: "both",
       separateReports: true,
+      dreamsPath: "memory/dreaming/DREAMS.md",
     });
+    expect(resolved.phases.deep.writeMode).toBe("report-only");
     expect(resolved.phases.deep.cron).toBe("0 */4 * * *");
     expect(resolved.phases.deep.limit).toBe(5);
     expect(resolved.phases.deep.minScore).toBe(0.9);
@@ -159,6 +164,7 @@ describe("memory dreaming host helpers", () => {
     expect(resolved.frequency).toBe("0 3 * * *");
     expect(resolved.timezone).toBe("America/Los_Angeles");
     expect(resolved.phases.deep.cron).toBe("0 3 * * *");
+    expect(resolved.phases.deep.writeMode).toBe("apply");
     expect(resolved.phases.deep.limit).toBe(10);
     expect(resolved.phases.deep.minScore).toBe(0.8);
     expect(resolved.phases.deep.recencyHalfLifeDays).toBe(14);
@@ -174,6 +180,18 @@ describe("memory dreaming host helpers", () => {
       mode: "separate",
       separateReports: false,
     });
+  });
+
+  it("resolves a configured dreams path inside the workspace", () => {
+    expect(resolveMemoryDreamingDreamsPath("/workspace/main", "memory/dreaming/DREAMS.md")).toBe(
+      "/workspace/main/memory/dreaming/DREAMS.md",
+    );
+    expect(() => resolveMemoryDreamingDreamsPath("/workspace/main", "../DREAMS.md")).toThrow(
+      "must stay inside",
+    );
+    expect(() => resolveMemoryDreamingDreamsPath("/workspace/main", "/tmp/DREAMS.md")).toThrow(
+      "workspace-relative",
+    );
   });
 
   it("preserves explicit inline storage mode for callers that opt in", () => {

@@ -136,6 +136,7 @@ export async function writeDeepDreamingReport(params: {
   const body = params.bodyLines.length > 0 ? params.bodyLines.join("\n") : "- No durable changes.";
   const inlinePath = await updateDeepDreamsFile({
     workspaceDir: params.workspaceDir,
+    ...(params.storage.dreamsPath ? { dreamsPath: params.storage.dreamsPath } : {}),
     bodyLines: params.bodyLines,
   });
   let reportPath: string | undefined;

@@ -65,6 +65,7 @@ type MemoryDreamingSpeed = "fast" | "balanced" | "slow";
 type MemoryDreamingThinking = "low" | "medium" | "high";
 type MemoryDreamingBudget = "cheap" | "medium" | "expensive";
 type MemoryDreamingStorageMode = "inline" | "separate" | "both";
+export type MemoryDreamingDeepWriteMode = "apply" | "report-only";
 
 type MemoryLightDreamingSource = "daily" | "sessions" | "recall";
 type MemoryDeepDreamingSource = "daily" | "memory" | "sessions" | "logs" | "recall";
@@ -83,6 +84,7 @@ type MemoryDreamingExecutionConfig = {
 export type MemoryDreamingStorageConfig = {
   mode: MemoryDreamingStorageMode;
   separateReports: boolean;
+  dreamsPath?: string;
 };
 
 type MemoryLightDreamingConfig = {
@@ -107,6 +109,7 @@ type MemoryDeepDreamingRecoveryConfig = {
 type MemoryDeepDreamingConfig = {
   enabled: boolean;
   cron: string;
+  writeMode: MemoryDreamingDeepWriteMode;
   limit: number;
   minScore: number;
   minRecallCount: number;
@@ -243,6 +246,32 @@ function normalizeStorageMode(value: unknown): MemoryDreamingStorageMode {
   return DEFAULT_MEMORY_DREAMING_STORAGE_MODE;
 }
 
+function normalizeDeepWriteMode(value: unknown): MemoryDreamingDeepWriteMode {
+  return normalizeOptionalLowercaseString(value) === "report-only" ? "report-only" : "apply";
+}
+
+export function resolveMemoryDreamingDreamsPath(
+  workspaceDir: string,
+  configuredPath: string,
+): string {
+  const workspaceRoot = path.resolve(workspaceDir);
+  const normalized = configuredPath.trim();
+  if (!normalized || path.isAbsolute(normalized)) {
+    throw new Error("dreaming.storage.dreamsPath must be a workspace-relative file path");
+  }
+  const resolved = path.resolve(workspaceRoot, normalized);
+  const relative = path.relative(workspaceRoot, resolved);
+  if (
+    !relative ||
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    throw new Error("dreaming.storage.dreamsPath must stay inside the agent workspace");
+  }
+  return resolved;
+}
+
 function normalizeSpeed(value: unknown): MemoryDreamingSpeed | undefined {
   const normalized = normalizeOptionalLowercaseString(value);
   if (normalized === "fast" || normalized === "balanced" || normalized === "slow") {
@@ -373,6 +402,9 @@ export function resolveMemoryDreamingConfig(params: {
         storage?.separateReports,
         DEFAULT_MEMORY_DREAMING_SEPARATE_REPORTS,
       ),
+      ...(normalizeTrimmedString(storage?.dreamsPath)
+        ? { dreamsPath: normalizeTrimmedString(storage?.dreamsPath) }
+        : {}),
     },
     execution: {
       defaults: defaultExecution,
@@ -405,6 +437,7 @@ export function resolveMemoryDreamingConfig(params: {
       deep: {
         enabled: normalizeBoolean(deep?.enabled, true),
         cron: frequency,
+        writeMode: normalizeDeepWriteMode(deep?.writeMode),
         limit: normalizeNonNegativeInt(deep?.limit, DEFAULT_MEMORY_DEEP_DREAMING_LIMIT),
         minScore: normalizeScore(deep?.minScore, DEFAULT_MEMORY_DEEP_DREAMING_MIN_SCORE),
         minRecallCount: normalizeNonNegativeInt(

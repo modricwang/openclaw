@@ -152,6 +152,7 @@ const REQUEST_SCOPED_FALLBACK_NARRATIVE =
 
 export async function appendFallbackNarrativeEntry(params: {
   workspaceDir: string;
+  dreamsPath?: string;
   data: NarrativePhaseData;
   nowMs: number;
   timezone?: string;
@@ -161,6 +162,7 @@ export async function appendFallbackNarrativeEntry(params: {
   try {
     await appendNarrativeEntry({
       workspaceDir: params.workspaceDir,
+      ...(params.dreamsPath ? { dreamsPath: params.dreamsPath } : {}),
       // Raw snippets and promotions are pre-processing memory staging fragments.
       // Keep fallback diary text generic so DREAMS.md never leaks staging content.
       narrative: REQUEST_SCOPED_FALLBACK_NARRATIVE,
@@ -233,6 +235,7 @@ async function startNarrativeRunOrFallback(params: {
   message: string;
   data: NarrativePhaseData;
   workspaceDir: string;
+  dreamsPath?: string;
   nowMs: number;
   timezone?: string;
   model?: string;
@@ -256,6 +259,7 @@ async function startNarrativeRunOrFallback(params: {
     }
     await appendFallbackNarrativeEntry({
       workspaceDir: params.workspaceDir,
+      ...(params.dreamsPath ? { dreamsPath: params.dreamsPath } : {}),
       data: params.data,
       nowMs: params.nowMs,
       timezone: params.timezone,
@@ -495,6 +499,7 @@ function isOptionalDiaryContextReadError(err: unknown): boolean {
 
 export async function readRecentDreamDiaryEntries(params: {
   workspaceDir: string;
+  dreamsPath?: string;
   limit?: number;
 }): Promise<string[]> {
   const limit = Math.max(0, Math.floor(params.limit ?? RECENT_DIARY_CONTEXT_LIMIT));
@@ -503,7 +508,7 @@ export async function readRecentDreamDiaryEntries(params: {
   }
   let existing: string;
   try {
-    const dreamsPath = await resolveDreamsPath(params.workspaceDir);
+    const dreamsPath = await resolveDreamsPath(params.workspaceDir, params.dreamsPath);
     existing = await readDreamsFile(dreamsPath);
   } catch (err) {
     if (isOptionalDiaryContextReadError(err)) {
@@ -630,6 +635,7 @@ function buildBackfillDiaryEntry(params: {
 
 export async function writeBackfillDiaryEntries(params: {
   workspaceDir: string;
+  dreamsPath?: string;
   entries: Array<{
     isoDay: string;
     bodyLines: string[];
@@ -639,6 +645,7 @@ export async function writeBackfillDiaryEntries(params: {
 }): Promise<{ dreamsPath: string; written: number; replaced: number }> {
   return await updateDreamsFile({
     workspaceDir: params.workspaceDir,
+    ...(params.dreamsPath ? { dreamsPath: params.dreamsPath } : {}),
     updater: (existing, dreamsPath) => {
       const stripped = stripBackfillDiaryBlocks(existing);
       const startIdx = stripped.updated.indexOf(DIARY_START_MARKER);
@@ -673,9 +680,11 @@ export async function writeBackfillDiaryEntries(params: {
 
 export async function removeBackfillDiaryEntries(params: {
   workspaceDir: string;
+  dreamsPath?: string;
 }): Promise<{ dreamsPath: string; removed: number }> {
   return await updateDreamsFile({
     workspaceDir: params.workspaceDir,
+    ...(params.dreamsPath ? { dreamsPath: params.dreamsPath } : {}),
     updater: (existing, dreamsPath) => {
       const stripped = stripBackfillDiaryBlocks(existing);
       return {
@@ -692,9 +701,11 @@ export async function removeBackfillDiaryEntries(params: {
 
 export async function dedupeDreamDiaryEntries(params: {
   workspaceDir: string;
+  dreamsPath?: string;
 }): Promise<{ dreamsPath: string; removed: number; kept: number }> {
   return await updateDreamsFile({
     workspaceDir: params.workspaceDir,
+    ...(params.dreamsPath ? { dreamsPath: params.dreamsPath } : {}),
     updater: (existing, dreamsPath) => {
       const ensured = ensureDiarySection(existing);
       const startIdx = ensured.indexOf(DIARY_START_MARKER);
@@ -739,6 +750,7 @@ function buildDiaryEntry(narrative: string, dateStr: string): string {
 
 async function appendNarrativeEntry(params: {
   workspaceDir: string;
+  dreamsPath?: string;
   narrative: string;
   nowMs: number;
   timezone?: string;
@@ -747,6 +759,7 @@ async function appendNarrativeEntry(params: {
   const entry = buildDiaryEntry(params.narrative, dateStr);
   return await updateDreamsFile({
     workspaceDir: params.workspaceDir,
+    ...(params.dreamsPath ? { dreamsPath: params.dreamsPath } : {}),
     updater: (existing, dreamsPath) => {
       let updated: string;
       if (existing.includes(DIARY_START_MARKER) && existing.includes(DIARY_END_MARKER)) {
@@ -816,6 +829,7 @@ async function scrubDreamingNarrativeArtifacts(logger: Logger): Promise<void> {
 export async function generateAndAppendDreamNarrative(params: {
   subagent: SubagentSurface;
   workspaceDir: string;
+  dreamsPath?: string;
   data: NarrativePhaseData;
   nowMs?: number;
   timezone?: string;
@@ -862,6 +876,7 @@ export async function generateAndAppendDreamNarrative(params: {
             message,
             data: params.data,
             workspaceDir: params.workspaceDir,
+            ...(params.dreamsPath ? { dreamsPath: params.dreamsPath } : {}),
             nowMs,
             timezone: params.timezone,
             model: attemptModel,
@@ -904,6 +919,7 @@ export async function generateAndAppendDreamNarrative(params: {
           );
           await appendFallbackNarrativeEntry({
             workspaceDir: params.workspaceDir,
+            ...(params.dreamsPath ? { dreamsPath: params.dreamsPath } : {}),
             data: params.data,
             nowMs,
             timezone: params.timezone,
@@ -939,6 +955,7 @@ export async function generateAndAppendDreamNarrative(params: {
         );
         await appendFallbackNarrativeEntry({
           workspaceDir: params.workspaceDir,
+          ...(params.dreamsPath ? { dreamsPath: params.dreamsPath } : {}),
           data: params.data,
           nowMs,
           timezone: params.timezone,
@@ -950,6 +967,7 @@ export async function generateAndAppendDreamNarrative(params: {
 
       await appendNarrativeEntry({
         workspaceDir: params.workspaceDir,
+        ...(params.dreamsPath ? { dreamsPath: params.dreamsPath } : {}),
         narrative,
         nowMs,
         timezone: params.timezone,

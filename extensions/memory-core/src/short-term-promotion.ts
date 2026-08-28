@@ -262,7 +262,11 @@ export {
   recordGroundedShortTermCandidates,
   recordShortTermRecalls,
 } from "./short-term-promotion-record.js";
-export { applyShortTermPromotions } from "./short-term-promotion-apply.js";
+export {
+  applyShortTermPromotions,
+  reconcileShortTermPromotionMarkers,
+  type ReconcileShortTermPromotionMarkersResult,
+} from "./short-term-promotion-apply.js";
 export {
   auditShortTermPromotionArtifacts,
   removeGroundedShortTermCandidates,

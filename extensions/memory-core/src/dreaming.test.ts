@@ -1,4 +1,6 @@
 // Memory Core tests cover dreaming plugin behavior.
+import fs from "node:fs/promises";
+import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import {
@@ -22,6 +24,7 @@ import {
   registerShortTermPromotionDreaming,
   resolveShortTermPromotionDreamingConfig,
 } from "./dreaming.js";
+import { readShortTermRecallEntries, recordShortTermRecalls } from "./short-term-promotion.js";
 import { createMemoryCoreTestHarness } from "./test-helpers.js";
 
 const constants = {
@@ -325,6 +328,7 @@ describe("short-term dreaming config", () => {
     expect(resolved).toEqual({
       enabled: false,
       cron: constants.DEFAULT_DREAMING_CRON_EXPR,
+      writeMode: "apply",
       timezone: "America/Los_Angeles",
       limit: constants.DEFAULT_DREAMING_LIMIT,
       minScore: constants.DEFAULT_DREAMING_MIN_SCORE,
@@ -367,6 +371,7 @@ describe("short-term dreaming config", () => {
     expect(resolved).toEqual({
       enabled: true,
       cron: "5 1 * * *",
+      writeMode: "apply",
       timezone: "UTC",
       limit: 7,
       minScore: 0.4,
@@ -409,6 +414,7 @@ describe("short-term dreaming config", () => {
     expect(resolved).toEqual({
       enabled: true,
       cron: "5 1 * * *",
+      writeMode: "apply",
       limit: 4,
       minScore: 0.6,
       minRecallCount: 2,
@@ -446,6 +452,7 @@ describe("short-term dreaming config", () => {
     expect(resolved).toEqual({
       enabled: true,
       cron: constants.DEFAULT_DREAMING_CRON_EXPR,
+      writeMode: "apply",
       limit: constants.DEFAULT_DREAMING_LIMIT,
       minScore: constants.DEFAULT_DREAMING_MIN_SCORE,
       minRecallCount: constants.DEFAULT_DREAMING_MIN_RECALL_COUNT,
@@ -539,6 +546,135 @@ describe("short-term dreaming config", () => {
       },
     });
     expect(resolved.enabled).toBe(false);
+  });
+
+  it("resolves report-only deep writes and a separate diary path", () => {
+    const resolved = resolveShortTermPromotionDreamingConfig({
+      pluginConfig: {
+        dreaming: {
+          storage: { dreamsPath: "memory/dreaming/DREAMS.md" },
+          phases: { deep: { writeMode: "report-only" } },
+        },
+      },
+    });
+    expect(resolved.writeMode).toBe("report-only");
+    expect(resolved.storage?.dreamsPath).toBe("memory/dreaming/DREAMS.md");
+  });
+});
+
+describe("report-only dreaming boundary", () => {
+  it("keeps source-owned root prompt files byte-identical", async () => {
+    clearInternalHooks();
+    const logger = createLogger();
+    const harness = createCronHarness();
+    const onMock = vi.fn();
+    const workspaceDir = await createTempWorkspace("memory-dreaming-report-only-");
+    const memoryDir = path.join(workspaceDir, "memory");
+    await fs.mkdir(memoryDir, { recursive: true });
+    const sourceMemory = "# Curated regression anchors\n";
+    const sourceDreams = "# Source-owned dream instructions\n";
+    await fs.writeFile(path.join(workspaceDir, "MEMORY.md"), sourceMemory, "utf-8");
+    await fs.writeFile(path.join(workspaceDir, "DREAMS.md"), sourceDreams, "utf-8");
+    await fs.writeFile(
+      path.join(memoryDir, "2026-04-05.md"),
+      "A reviewed durable preference should stay source-owned.\n",
+      "utf-8",
+    );
+    for (const query of ["preference alpha", "preference beta", "preference gamma"]) {
+      await recordShortTermRecalls({
+        workspaceDir,
+        query,
+        results: [
+          {
+            path: "memory/2026-04-05.md",
+            startLine: 1,
+            endLine: 1,
+            score: 0.95,
+            snippet: "A reviewed durable preference should stay source-owned.",
+            source: "memory",
+          },
+        ],
+        nowMs: Date.parse("2026-04-06T00:00:00Z"),
+      });
+    }
+    const config = {
+      agents: {
+        list: [{ id: "main", default: true, workspace: workspaceDir }],
+      },
+      plugins: {
+        entries: {
+          "memory-core": {
+            config: {
+              dreaming: {
+                enabled: true,
+                timezone: "UTC",
+                storage: {
+                  mode: "separate",
+                  dreamsPath: "memory/dreaming/DREAMS.md",
+                },
+                phases: {
+                  light: { enabled: false },
+                  rem: { enabled: false },
+                  deep: {
+                    writeMode: "report-only",
+                    minScore: 0,
+                    minRecallCount: 0,
+                    minUniqueQueries: 0,
+                    maxAgeDays: 9999,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    } as OpenClawConfig;
+    const api: DreamingPluginApiTestDouble = {
+      config,
+      pluginConfig: {},
+      logger,
+      runtime: {},
+      on: onMock,
+    };
+
+    try {
+      registerShortTermPromotionDreamingForTest(api);
+      await triggerGatewayStart(onMock, {
+        config,
+        getCron: () => harness.cron,
+      });
+      const sessionKey = "agent:main:main";
+      enqueueSystemEvent(constants.DREAMING_SYSTEM_EVENT_TEXT, {
+        sessionKey,
+        contextKey: "cron:memory-dreaming",
+      });
+      const result = await getBeforeAgentReplyHandler(onMock)(
+        { cleanedBody: constants.DREAMING_SYSTEM_EVENT_TEXT },
+        { trigger: "heartbeat", workspaceDir, sessionKey },
+      );
+
+      expect(result).toEqual({
+        handled: true,
+        reason: "memory-core: short-term dreaming processed",
+      });
+      await expect(fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf-8")).resolves.toBe(
+        sourceMemory,
+      );
+      await expect(fs.readFile(path.join(workspaceDir, "DREAMS.md"), "utf-8")).resolves.toBe(
+        sourceDreams,
+      );
+      const runtimeDreams = await fs.readFile(
+        path.join(workspaceDir, "memory", "dreaming", "DREAMS.md"),
+        "utf-8",
+      );
+      expect(runtimeDreams).toContain("Deferred 1 candidate(s) for source-owner review");
+      const entries = await readShortTermRecallEntries({ workspaceDir });
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.promotedAt).toBeUndefined();
+    } finally {
+      await triggerGatewayStop(onMock).catch(() => undefined);
+      clearInternalHooks();
+    }
   });
 });
 

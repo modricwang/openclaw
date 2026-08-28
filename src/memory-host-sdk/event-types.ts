@@ -52,6 +52,15 @@ type MemoryHostPromotionAppliedEvent = MemoryHostEventStorageMetadata & {
   }>;
 };
 
+/** Event emitted when source-owned MEMORY.md markers acknowledge reviewed candidates. */
+type MemoryHostPromotionReconciledEvent = MemoryHostEventStorageMetadata & {
+  type: "memory.promotion.reconciled";
+  timestamp: string;
+  memoryPath: string;
+  reconciled: number;
+  candidateKeys: string[];
+};
+
 /** Normalized outcome for a dreaming phase run. */
 type MemoryDreamOutcome = "completed" | "failed";
 
@@ -74,6 +83,7 @@ type MemoryHostDreamCompletedEvent = MemoryHostEventStorageMetadata & {
 export type MemoryHostEvent =
   | MemoryHostRecallRecordedEvent
   | MemoryHostPromotionAppliedEvent
+  | MemoryHostPromotionReconciledEvent
   | MemoryHostDreamCompletedEvent;
 
 /** Full event record schema, including opt-in diagnostic variants. */

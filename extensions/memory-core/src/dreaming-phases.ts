@@ -65,7 +65,11 @@ type Logger = Pick<OpenClawPluginApi["logger"], "info" | "warn" | "error">;
 type DreamingHostConfig = unknown;
 type DreamingPhaseStorageConfig = {
   timezone?: string;
-  storage: { mode: "inline" | "separate" | "both"; separateReports: boolean };
+  storage: {
+    mode: "inline" | "separate" | "both";
+    separateReports: boolean;
+    dreamsPath?: string;
+  };
   execution?: { model?: string };
 };
 type LightDreamingConfig = DreamingPhaseStorageConfig & {
@@ -1625,6 +1629,7 @@ async function runLightDreaming(params: {
   );
   const recentDiaryEntries = await readRecentDreamDiaryEntries({
     workspaceDir: params.workspaceDir,
+    ...(params.config.storage.dreamsPath ? { dreamsPath: params.config.storage.dreamsPath } : {}),
     limit: LIGHT_DIARY_HISTORY_LIMIT,
   });
   const entries = prioritizeLightEntriesByDiaryCoverage(rankedEntries, recentDiaryEntries);
@@ -1663,6 +1668,9 @@ async function runLightDreaming(params: {
       runDetachedDreamNarrative({
         subagent: params.subagent,
         workspaceDir: params.workspaceDir,
+        ...(params.config.storage.dreamsPath
+          ? { dreamsPath: params.config.storage.dreamsPath }
+          : {}),
         data,
         nowMs,
         timezone: params.config.timezone,
@@ -1673,6 +1681,9 @@ async function runLightDreaming(params: {
       await generateAndAppendDreamNarrative({
         subagent: params.subagent,
         workspaceDir: params.workspaceDir,
+        ...(params.config.storage.dreamsPath
+          ? { dreamsPath: params.config.storage.dreamsPath }
+          : {}),
         data,
         nowMs,
         timezone: params.config.timezone,
@@ -1778,6 +1789,9 @@ async function runRemDreaming(params: {
       runDetachedDreamNarrative({
         subagent: params.subagent,
         workspaceDir: params.workspaceDir,
+        ...(params.config.storage.dreamsPath
+          ? { dreamsPath: params.config.storage.dreamsPath }
+          : {}),
         data,
         nowMs,
         timezone: params.config.timezone,
@@ -1788,6 +1802,9 @@ async function runRemDreaming(params: {
       await generateAndAppendDreamNarrative({
         subagent: params.subagent,
         workspaceDir: params.workspaceDir,
+        ...(params.config.storage.dreamsPath
+          ? { dreamsPath: params.config.storage.dreamsPath }
+          : {}),
         data,
         nowMs,
         timezone: params.config.timezone,

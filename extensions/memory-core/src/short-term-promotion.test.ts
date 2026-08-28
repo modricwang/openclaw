@@ -27,6 +27,7 @@ import {
   recordRemConsideredPhaseSignals,
   recordShortTermRecalls,
   readLightStagedKeys,
+  reconcileShortTermPromotionMarkers,
   removeGroundedShortTermCandidates,
   repairShortTermPromotionArtifacts,
 } from "./short-term-promotion.js";
@@ -1398,6 +1399,47 @@ describe("short-term promotion", () => {
       expect(
         memoryText.match(/The gateway should stay loopback-only on port 18789\./g)?.length,
       ).toBe(1);
+    });
+  });
+
+  it("acknowledges source-owned markers without writing MEMORY.md", async () => {
+    await withTempWorkspace(async (workspaceDir) => {
+      await writeDailyMemoryNote(workspaceDir, "2026-04-01", ["A reviewed durable preference."]);
+      await recordShortTermRecalls({
+        workspaceDir,
+        query: "reviewed preference",
+        results: [
+          {
+            path: "memory/2026-04-01.md",
+            startLine: 1,
+            endLine: 1,
+            score: 0.95,
+            snippet: "A reviewed durable preference.",
+            source: "memory",
+          },
+        ],
+      });
+      const candidateKey = "memory:memory/2026-04-01.md:1:1";
+      const memoryPath = path.join(workspaceDir, "MEMORY.md");
+      const sourceOwnedMemory = [
+        "# Curated Memory",
+        "",
+        `<!-- openclaw-memory-promotion:${candidateKey} -->`,
+        "- A reviewed durable preference.",
+        "",
+      ].join("\n");
+      await fs.writeFile(memoryPath, sourceOwnedMemory, "utf-8");
+
+      const reconciled = await reconcileShortTermPromotionMarkers({
+        workspaceDir,
+        nowMs: Date.parse("2026-04-06T00:00:00Z"),
+      });
+
+      expect(reconciled.reconciled).toBe(1);
+      expect(reconciled.candidateKeys).toEqual([candidateKey]);
+      await expect(fs.readFile(memoryPath, "utf-8")).resolves.toBe(sourceOwnedMemory);
+      const store = await testing.readRecallStore(workspaceDir, new Date().toISOString());
+      expect(store.entries[candidateKey]?.promotedAt).toBe("2026-04-06T00:00:00.000Z");
     });
   });
 

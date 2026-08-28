@@ -1,5 +1,6 @@
 import type { MemoryEmbeddingProbeResult } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import {
+  resolveMemoryDreamingConfig,
   resolveMemoryLightDreamingConfig,
   resolveMemoryRemDreamingConfig,
 } from "openclaw/plugin-sdk/memory-core-host-status";
@@ -120,7 +121,7 @@ function formatDreamingSummary(cfg: OpenClawConfig): string {
     : null;
   const hasLighterPhase = light.enabled || rem.enabled;
   const deepLabel = hasLighterPhase ? "deep=" : "";
-  const deepDetails = `${formatCron(deep.cron)} · limit=${deep.limit} · minScore=${deep.minScore} · minRecallCount=${deep.minRecallCount} · minUniqueQueries=${deep.minUniqueQueries} · recencyHalfLifeDays=${deep.recencyHalfLifeDays} · maxAgeDays=${deep.maxAgeDays ?? "none"} · maxPromotedSnippetTokens=${deep.maxPromotedSnippetTokens}`;
+  const deepDetails = `${formatCron(deep.cron)} · writeMode=${deep.writeMode} · limit=${deep.limit} · minScore=${deep.minScore} · minRecallCount=${deep.minRecallCount} · minUniqueQueries=${deep.minUniqueQueries} · recencyHalfLifeDays=${deep.recencyHalfLifeDays} · maxAgeDays=${deep.maxAgeDays ?? "none"} · maxPromotedSnippetTokens=${deep.maxPromotedSnippetTokens} · dreamsPath=${deep.storage?.dreamsPath ?? "DREAMS.md"}`;
   const deepSummary = deep.enabled ? `${deepLabel}${deepDetails}` : null;
   const phases = [lightSummary, remSummary, deepSummary].filter(Boolean);
   return phases.length > 0 ? phases.join(" · ") : "off";
@@ -278,10 +279,23 @@ export async function runMemoryStatus(
         let dreamingAudit: DreamingArtifactsAuditSummary | undefined;
         let dreamingRepair: RepairDreamingArtifactsResult | undefined;
         if (workspaceDir) {
-          dreamingAudit = await auditDreamingArtifacts({ workspaceDir });
+          const dreamingStorage = resolveMemoryDreamingConfig({
+            pluginConfig: resolveMemoryPluginConfig(cfg),
+            cfg,
+          }).storage;
+          dreamingAudit = await auditDreamingArtifacts({
+            workspaceDir,
+            ...(dreamingStorage.dreamsPath ? { dreamsPath: dreamingStorage.dreamsPath } : {}),
+          });
           if (opts.fix && dreamingAudit.issues.some((issue) => issue.fixable)) {
-            dreamingRepair = await repairDreamingArtifacts({ workspaceDir });
-            dreamingAudit = await auditDreamingArtifacts({ workspaceDir });
+            dreamingRepair = await repairDreamingArtifacts({
+              workspaceDir,
+              ...(dreamingStorage.dreamsPath ? { dreamsPath: dreamingStorage.dreamsPath } : {}),
+            });
+            dreamingAudit = await auditDreamingArtifacts({
+              workspaceDir,
+              ...(dreamingStorage.dreamsPath ? { dreamsPath: dreamingStorage.dreamsPath } : {}),
+            });
           }
           if (opts.fix) {
             repair = await repairShortTermPromotionArtifacts({ workspaceDir });

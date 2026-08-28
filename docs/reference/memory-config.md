@@ -651,6 +651,8 @@ For conceptual behavior and slash commands, see [Dreaming](/concepts/dreaming).
 | `enabled`                              | `boolean` | `false`       | Enable or disable dreaming entirely                                                                                              |
 | `frequency`                            | `string`  | `0 3 * * *`   | Optional cron cadence for the full dreaming sweep                                                                                |
 | `model`                                | `string`  | default model | Optional Dream Diary subagent model override                                                                                     |
+| `storage.dreamsPath`                   | `string`  | `DREAMS.md`   | Optional workspace-relative path for Dream Diary and managed deep output; workspace escapes are rejected                         |
+| `phases.deep.writeMode`                | `string`  | `apply`       | `apply` writes eligible candidates to `MEMORY.md`; `report-only` leaves durable memory source-owned                              |
 | `phases.deep.maxPromotedSnippetTokens` | `number`  | `160`         | Maximum estimated tokens kept from each short-term recall snippet promoted into `MEMORY.md`; provenance metadata remains visible |
 
 ### Example
@@ -669,6 +671,15 @@ For conceptual behavior and slash commands, see [Dreaming](/concepts/dreaming).
             enabled: true,
             frequency: "0 3 * * *",
             model: "anthropic/claude-sonnet-4-6",
+            storage: {
+              mode: "separate",
+              dreamsPath: "memory/dreaming/DREAMS.md",
+            },
+            phases: {
+              deep: {
+                writeMode: "report-only",
+              },
+            },
           },
         },
       },
