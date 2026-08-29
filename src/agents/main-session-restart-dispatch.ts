@@ -350,6 +350,7 @@ export async function resumeMainSession(params: {
   sessionKey: string;
   pendingFinalDeliveryText?: string | null;
   forceRestartSafeTools?: boolean;
+  heartbeatPrepareReplayRequired?: true;
   resumeExistingTurn?: boolean;
   sessionWorkAdmissionHandoffId?: string;
   gatewayRuntime: GatewayRecoveryRuntime;
@@ -419,6 +420,16 @@ export async function resumeMainSession(params: {
           return { result: false };
         }
         entry.restartRecoveryDeliveryRunId = recoveryRunId;
+        if (params.heartbeatPrepareReplayRequired) {
+          const runProfile = entry.restartRecoveryRunProfile;
+          if (runProfile?.kind !== "heartbeat" || !runProfile.referenceTimeIso) {
+            return { result: false };
+          }
+          entry.restartRecoveryRunProfile = {
+            ...runProfile,
+            prepareReplayRequired: true,
+          };
+        }
         if (params.forceRestartSafeTools) {
           entry.restartRecoveryForceSafeTools = true;
         }

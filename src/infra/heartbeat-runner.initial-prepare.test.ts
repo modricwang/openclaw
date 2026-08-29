@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { resolveHeartbeatInitialRunLifecycleOptions } from "./heartbeat-runner-execution.js";
 
 describe("interval heartbeat initial prepare lifecycle", () => {
+  const referenceTimeIso = "2026-08-26T11:00:00.000Z";
+
   it("requires the exact prepare action before the first ordinary interval response", () => {
     expect(
       resolveHeartbeatInitialRunLifecycleOptions({
@@ -10,13 +12,17 @@ describe("interval heartbeat initial prepare lifecycle", () => {
         hasExecCompletion: false,
         hasCronEvents: false,
         usesHeartbeatResponseTool: false,
+        referenceTimeIso,
       }),
     ).toEqual({
       toolsAllow: ["model_front_door__prepare_heartbeat"],
       initialRunLifecycle: {
         kind: "require_tool",
         toolName: "model_front_door__prepare_heartbeat",
-        requiredArguments: { action: "prepare" },
+        requiredArguments: {
+          action: "prepare",
+          reference_time_iso: referenceTimeIso,
+        },
         violationMode: "fail_run",
       },
     });
@@ -64,6 +70,6 @@ describe("interval heartbeat initial prepare lifecycle", () => {
       usesHeartbeatResponseTool: false,
     },
   ])("does not alter $label", ({ label: _label, ...input }) => {
-    expect(resolveHeartbeatInitialRunLifecycleOptions(input)).toEqual({});
+    expect(resolveHeartbeatInitialRunLifecycleOptions({ ...input, referenceTimeIso })).toEqual({});
   });
 });

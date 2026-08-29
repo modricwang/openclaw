@@ -46,6 +46,10 @@ export type RestartRecoveryTerminalDeliveryEvidence =
 export type RestartRecoveryRunProfile = {
   kind: "heartbeat";
   bootstrapContextMode?: "full" | "lightweight";
+  /** Immutable runtime clock identity captured when the scheduled run was admitted. */
+  referenceTimeIso?: string;
+  /** Durable transient phase bit used only for an exact same-slot prepare replay. */
+  prepareReplayRequired?: true;
 };
 
 /** Durable ownership and idempotency state for gateway restart recovery. */

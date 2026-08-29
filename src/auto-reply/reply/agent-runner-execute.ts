@@ -513,6 +513,10 @@ export function createReplyAgentRestartRecoveryController(
             ...(opts.bootstrapContextMode === "full" || opts.bootstrapContextMode === "lightweight"
               ? { bootstrapContextMode: opts.bootstrapContextMode }
               : {}),
+            ...(typeof opts.heartbeatReferenceTimeIso === "string" &&
+            opts.heartbeatReferenceTimeIso.trim()
+              ? { referenceTimeIso: opts.heartbeatReferenceTimeIso.trim() }
+              : {}),
           }
         : undefined,
     resolveUserTurnTarget: ({

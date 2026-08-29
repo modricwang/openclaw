@@ -85,7 +85,11 @@ describe("createReplyRestartRecoveryClaimController", () => {
       getSessionId: () => sessionId,
       isRestartAbort: () => false,
       resolveDeliveryContext: () => undefined,
-      runProfile: { kind: "heartbeat", bootstrapContextMode: "lightweight" },
+      runProfile: {
+        kind: "heartbeat",
+        bootstrapContextMode: "lightweight",
+        referenceTimeIso: "2026-08-26T11:00:00.000Z",
+      },
       sessionKey,
       setEntry: (next) => {
         entry = next;
@@ -103,6 +107,7 @@ describe("createReplyRestartRecoveryClaimController", () => {
       restartRecoveryRunProfile: {
         kind: "heartbeat",
         bootstrapContextMode: "lightweight",
+        referenceTimeIso: "2026-08-26T11:00:00.000Z",
       },
     });
     expect(persisted?.restartRecoveryDeliveryRunId).toEqual(expect.any(String));

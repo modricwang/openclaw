@@ -436,6 +436,7 @@ export async function recoverStore(params: {
       entry.restartRecoveryBeforeAgentReplyState,
       entry.restartRecoveryDeliveryReceiptState,
       entry.restartRecoveryDeliveryToolCallId,
+      entry.restartRecoveryRunProfile,
     );
     if (resumePolicy.action === "complete") {
       const completion = await markSessionCompletedAfterRecoveryCheckpoint({
@@ -499,6 +500,7 @@ export async function recoverStore(params: {
       pendingFinalDeliveryText: entry.pendingFinalDeliveryText,
       forceRestartSafeTools:
         entry.restartRecoveryForceSafeTools === true || resumePolicy.forceRestartSafeTools,
+      heartbeatPrepareReplayRequired: resumePolicy.heartbeatPrepareReplayRequired,
       resumeExistingTurn: entry.restartRecoveryRunProfile?.kind === "heartbeat",
       sessionWorkAdmissionHandoffId: params.sessionWorkAdmissionHandoffId,
       gatewayRuntime: params.gatewayRuntime,

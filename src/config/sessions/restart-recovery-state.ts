@@ -34,9 +34,18 @@ function normalizeRestartRecoveryRunProfile(value: unknown): RestartRecoveryRunP
     record.bootstrapContextMode === "full" || record.bootstrapContextMode === "lightweight"
       ? record.bootstrapContextMode
       : undefined;
+  const rawReferenceTimeIso = normalizeRunId(record.referenceTimeIso);
+  const referenceTimeMs = rawReferenceTimeIso ? Date.parse(rawReferenceTimeIso) : Number.NaN;
+  const referenceTimeIso = Number.isFinite(referenceTimeMs)
+    ? new Date(referenceTimeMs).toISOString()
+    : undefined;
+  const prepareReplayRequired =
+    record.prepareReplayRequired === true && referenceTimeIso ? true : undefined;
   return {
     kind: "heartbeat",
     ...(bootstrapContextMode ? { bootstrapContextMode } : {}),
+    ...(referenceTimeIso ? { referenceTimeIso } : {}),
+    ...(prepareReplayRequired ? { prepareReplayRequired: true } : {}),
   };
 }
 
@@ -46,7 +55,9 @@ export function sameRestartRecoveryRunProfile(left: unknown, right: unknown): bo
   const normalizedRight = normalizeRestartRecoveryRunProfile(right);
   return (
     normalizedLeft?.kind === normalizedRight?.kind &&
-    normalizedLeft?.bootstrapContextMode === normalizedRight?.bootstrapContextMode
+    normalizedLeft?.bootstrapContextMode === normalizedRight?.bootstrapContextMode &&
+    normalizedLeft?.referenceTimeIso === normalizedRight?.referenceTimeIso &&
+    normalizedLeft?.prepareReplayRequired === normalizedRight?.prepareReplayRequired
   );
 }
 

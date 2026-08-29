@@ -285,6 +285,33 @@ async function writeCompletedToolTranscript(sessionsDir: string): Promise<void> 
   ]);
 }
 
+async function writeFailedHeartbeatPrepareTranscript(sessionsDir: string): Promise<void> {
+  await writeTranscript(sessionsDir, "main-session", [
+    { role: "user", content: "scheduled heartbeat" },
+    {
+      role: "assistant",
+      stopReason: "toolUse",
+      content: [
+        {
+          type: "toolCall",
+          id: "heartbeat-prepare-1",
+          name: "model_front_door__prepare_heartbeat",
+          arguments: {
+            action: "prepare",
+            reference_time_iso: "2026-08-26T11:00:00.000Z",
+          },
+        },
+      ],
+    },
+    {
+      role: "toolResult",
+      toolCallId: "heartbeat-prepare-1",
+      isError: true,
+      content: "mcp transport closed",
+    },
+  ]);
+}
+
 async function loadTestTranscript(
   sessionKey: string,
   storePath: string,
@@ -880,6 +907,7 @@ describe("main-session-restart-recovery", () => {
         restartRecoveryRunProfile: {
           kind: "heartbeat",
           bootstrapContextMode: "lightweight",
+          referenceTimeIso: "2026-08-26T11:00:00.000Z",
         },
       }),
     );
@@ -896,6 +924,37 @@ describe("main-session-restart-recovery", () => {
       bootstrapContextMode: "lightweight",
       suppressPromptPersistence: true,
       message: "openclaw:resume-existing-turn",
+    });
+  });
+
+  it("replays a failed Heartbeat prepare with the original admitted reference", async () => {
+    const sessionsDir = await makeSessionsDir();
+    await writeStore(
+      sessionsDir,
+      mainSessionStore({
+        restartRecoveryDeliveryRunId: "heartbeat-recovery-prepare",
+        restartRecoverySourceIngress: "internal",
+        restartRecoveryRunProfile: {
+          kind: "heartbeat",
+          referenceTimeIso: "2026-08-26T11:00:00.000Z",
+        },
+      }),
+    );
+    await writeFailedHeartbeatPrepareTranscript(sessionsDir);
+
+    await expectRecovery({ recovered: 1, failed: 0, skipped: 0 });
+    expect(callGateway).toHaveBeenCalledOnce();
+    expect(gatewayParams()).toMatchObject({
+      bootstrapContextRunKind: "heartbeat",
+      suppressPromptPersistence: true,
+      message: "openclaw:resume-existing-turn",
+    });
+    expect(readStore(path.join(sessionsDir, "sessions.json"))["agent:main:main"]).toMatchObject({
+      restartRecoveryRunProfile: {
+        kind: "heartbeat",
+        referenceTimeIso: "2026-08-26T11:00:00.000Z",
+        prepareReplayRequired: true,
+      },
     });
   });
 

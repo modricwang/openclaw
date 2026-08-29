@@ -8,6 +8,57 @@ import {
 } from "./embedded-agent-runner/message-visibility.js";
 import { isAgentToolReplaySafe } from "./tool-replay-safety.js";
 
+const HEARTBEAT_PREPARE_TOOL_NAME = "model_front_door__prepare_heartbeat";
+
+function readHeartbeatPrepareToolCall(message: unknown): { toolCallId: string } | undefined {
+  if (!message || typeof message !== "object" || getMessageRole(message) !== "assistant") {
+    return undefined;
+  }
+  const content = (message as { content?: unknown }).content;
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+  const calls = content.filter((block) => {
+    if (!block || typeof block !== "object") {
+      return false;
+    }
+    const type = (block as { type?: unknown }).type;
+    if (type !== "toolCall" && type !== "toolUse" && type !== "tool_use") {
+      return false;
+    }
+    const record = block as Record<string, unknown>;
+    const args = record.arguments ?? record.input;
+    return (
+      normalizeOptionalString(record.name) === HEARTBEAT_PREPARE_TOOL_NAME &&
+      args !== null &&
+      typeof args === "object" &&
+      !Array.isArray(args) &&
+      (args as { action?: unknown }).action === "prepare"
+    );
+  });
+  if (calls.length !== 1) {
+    return undefined;
+  }
+  const toolCallId = normalizeOptionalString((calls[0] as Record<string, unknown>).id);
+  return toolCallId ? { toolCallId } : undefined;
+}
+
+function isFailedToolResultForCall(message: unknown, toolCallId: string): boolean {
+  if (!message || typeof message !== "object" || getMessageRole(message) !== "toolResult") {
+    return false;
+  }
+  const record = message as Record<string, unknown>;
+  const details = record.details;
+  const isError =
+    record.isError === true ||
+    (details !== null &&
+      typeof details === "object" &&
+      !Array.isArray(details) &&
+      ((details as { isError?: unknown }).isError === true ||
+        (details as { status?: unknown }).status === "error"));
+  return normalizeOptionalString(record.toolCallId) === toolCallId && isError;
+}
+
 function readDeliveredTerminalSourceReplyToolCallId(
   messages: readonly unknown[],
   expectedSourceTurnId: string | undefined,
@@ -295,7 +346,26 @@ type MainSessionResumePolicy =
     }
   | { action: "complete"; reason: "handled-silent" }
   | { action: "fail"; reason: string }
-  | { action: "resume"; forceRestartSafeTools: boolean };
+  | {
+      action: "resume";
+      forceRestartSafeTools: boolean;
+      heartbeatPrepareReplayRequired?: true;
+    };
+
+function heartbeatPrepareReplayPolicy(
+  runProfile: SessionEntry["restartRecoveryRunProfile"],
+): MainSessionResumePolicy {
+  return runProfile?.kind === "heartbeat" && runProfile.referenceTimeIso
+    ? {
+        action: "resume",
+        forceRestartSafeTools: false,
+        heartbeatPrepareReplayRequired: true,
+      }
+    : {
+        action: "fail",
+        reason: "interrupted Heartbeat prepare lacks its original reference identity",
+      };
+}
 
 export function resolveMainSessionResumePolicy(
   messages: unknown[],
@@ -304,6 +374,7 @@ export function resolveMainSessionResumePolicy(
   beforeAgentReplyState?: SessionEntry["restartRecoveryBeforeAgentReplyState"],
   deliveryReceiptState?: SessionEntry["restartRecoveryDeliveryReceiptState"],
   deliveryToolCallId?: string,
+  runProfile?: SessionEntry["restartRecoveryRunProfile"],
 ): MainSessionResumePolicy {
   const mirroredToolCallId = readDeliveredTerminalSourceReplyToolCallId(
     messages,
@@ -345,6 +416,9 @@ export function resolveMainSessionResumePolicy(
   // resume safety. Persisted dangling tool calls instead classify like a
   // pending toolUse tail so ambiguous side effects stay restricted.
   if (isRestartAbortAssistantMessage(meaningfulMessages[0])) {
+    if (readHeartbeatPrepareToolCall(meaningfulMessages[0])) {
+      return heartbeatPrepareReplayPolicy(runProfile);
+    }
     const dangling = classifyDanglingToolCalls(
       (meaningfulMessages[0] as { content?: unknown }).content,
     );
@@ -359,6 +433,16 @@ export function resolveMainSessionResumePolicy(
     meaningfulMessages.shift();
   }
   const lastMeaningful = meaningfulMessages[0];
+  if (readHeartbeatPrepareToolCall(lastMeaningful)) {
+    return heartbeatPrepareReplayPolicy(runProfile);
+  }
+  const priorHeartbeatPrepare = readHeartbeatPrepareToolCall(meaningfulMessages[1]);
+  if (
+    priorHeartbeatPrepare &&
+    isFailedToolResultForCall(lastMeaningful, priorHeartbeatPrepare.toolCallId)
+  ) {
+    return heartbeatPrepareReplayPolicy(runProfile);
+  }
   if (forceRestartSafeTools && isPendingAssistantToolCall(lastMeaningful)) {
     return { action: "resume", forceRestartSafeTools: true };
   }

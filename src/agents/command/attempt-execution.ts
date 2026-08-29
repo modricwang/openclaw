@@ -99,6 +99,37 @@ export {
 
 const log = createSubsystemLogger("agents/agent-command");
 
+export function resolveHeartbeatPrepareReplayInitialLifecycle(params: {
+  resumeExistingHeartbeatTurn: boolean;
+  runProfile: unknown;
+}) {
+  if (
+    !params.resumeExistingHeartbeatTurn ||
+    !params.runProfile ||
+    typeof params.runProfile !== "object" ||
+    Array.isArray(params.runProfile)
+  ) {
+    return undefined;
+  }
+  const profile = params.runProfile as Record<string, unknown>;
+  const referenceTimeIso =
+    typeof profile.referenceTimeIso === "string" && profile.referenceTimeIso.trim()
+      ? profile.referenceTimeIso.trim()
+      : undefined;
+  if (profile.kind !== "heartbeat" || profile.prepareReplayRequired !== true || !referenceTimeIso) {
+    return undefined;
+  }
+  return {
+    kind: "require_tool" as const,
+    toolName: "model_front_door__prepare_heartbeat",
+    requiredArguments: {
+      action: "prepare",
+      reference_time_iso: referenceTimeIso,
+    },
+    violationMode: "fail_run" as const,
+  };
+}
+
 function shouldClearReusedCliSessionAfterError(err: unknown): boolean {
   if (readErrorName(err) === "AbortError") {
     return true;
@@ -656,6 +687,11 @@ export function runAgentAttempt(params: {
     params.opts.bootstrapContextRunKind === "heartbeat" &&
     params.opts.suppressPromptPersistence === true &&
     isMainSessionRestartRecoveryInputProvenance(params.opts.inputProvenance);
+  const heartbeatPrepareReplayInitialLifecycle =
+    resolveHeartbeatPrepareReplayInitialLifecycle({
+      resumeExistingHeartbeatTurn,
+      runProfile: params.sessionEntry?.restartRecoveryRunProfile,
+    });
   if (resumeExistingHeartbeatTurn && isCliExecutionProvider) {
     throw new Error("Heartbeat restart continuation requires the embedded native session runtime");
   }
@@ -969,6 +1005,7 @@ export function runAgentAttempt(params: {
     extraSystemPrompt: params.opts.extraSystemPrompt,
     bootstrapContextMode: params.opts.bootstrapContextMode,
     bootstrapContextRunKind: params.opts.bootstrapContextRunKind,
+    initialRunLifecycle: heartbeatPrepareReplayInitialLifecycle,
     toolsAllow: params.opts.toolsAllow,
     runtimePluginToolGrant: params.opts.runtimePluginToolGrant,
     trustedInternalHandoff: params.opts.trustedInternalHandoff,

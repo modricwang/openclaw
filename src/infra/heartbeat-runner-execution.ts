@@ -587,6 +587,7 @@ export function resolveHeartbeatInitialRunLifecycleOptions(params: {
   hasExecCompletion: boolean;
   hasCronEvents: boolean;
   usesHeartbeatResponseTool: boolean;
+  referenceTimeIso: string;
 }) {
   if (
     params.wakeSource !== "interval" ||
@@ -602,7 +603,10 @@ export function resolveHeartbeatInitialRunLifecycleOptions(params: {
     initialRunLifecycle: {
       kind: "require_tool" as const,
       toolName: "model_front_door__prepare_heartbeat",
-      requiredArguments: { action: "prepare" },
+      requiredArguments: {
+        action: "prepare",
+        reference_time_iso: params.referenceTimeIso,
+      },
       violationMode: "fail_run" as const,
     },
   };
@@ -619,6 +623,7 @@ export async function invokeHeartbeatAgentRun(
   const { usesHeartbeatResponseTool } = prepared;
   const replyOperationRunState: ReplyOperationRunState = {};
   const heartbeatModelOverride = normalizeOptionalString(heartbeat?.model);
+  const heartbeatReferenceTimeIso = new Date(startedAt).toISOString();
   const getReplyFromConfig =
     opts.deps?.getReplyFromConfig ?? (await loadHeartbeatRunnerRuntime()).getReplyFromConfig;
   const replyOpts = {
@@ -626,6 +631,7 @@ export async function invokeHeartbeatAgentRun(
     [HEARTBEAT_RUN_SCOPE]: runScope,
     [REPLY_OPERATION_RUN_STATE]: replyOperationRunState,
     ...(heartbeatModelOverride ? { heartbeatModelOverride } : {}),
+    heartbeatReferenceTimeIso,
     suppressToolErrorWarnings: false,
     ...(usesHeartbeatResponseTool ? { enableHeartbeatTool: true, forceHeartbeatTool: true } : {}),
     ...(usesHeartbeatResponseTool ? { sourceReplyDeliveryMode: "message_tool_only" as const } : {}),
@@ -636,6 +642,7 @@ export async function invokeHeartbeatAgentRun(
       hasExecCompletion,
       hasCronEvents,
       usesHeartbeatResponseTool,
+      referenceTimeIso: heartbeatReferenceTimeIso,
     }),
     // Heartbeat timeout is a per-run override so user turns keep the global default.
     timeoutOverrideSeconds: resolveHeartbeatTimeoutOverrideSeconds(cfg, heartbeat),
