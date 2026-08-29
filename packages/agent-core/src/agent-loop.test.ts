@@ -1621,13 +1621,23 @@ describe("agentLoop tool termination", () => {
 
   it("applies a host-issued required tool before the first provider response", async () => {
     const executed: string[] = [];
+    let executedArgs: unknown;
     let providerCalls = 0;
+    const referenceTimeIso = "2026-08-30T01:30:38.626Z";
     const prepare: AgentTool = {
       ...makeTool("prepare", executed),
       executionMode: "sequential",
-      parameters: Type.Object({ action: Type.Literal("prepare") }, { additionalProperties: false }),
-      execute: async () => {
+      parameters: Type.Object(
+        {
+          action: Type.Literal("prepare"),
+          reference_time_iso: Type.String(),
+          room: Type.Optional(Type.String()),
+        },
+        { additionalProperties: false },
+      ),
+      execute: async (_toolCallId, args) => {
         executed.push("prepare");
+        executedArgs = args;
         return {
           content: [{ type: "text", text: "prepared" }],
           details: {},
@@ -1646,7 +1656,7 @@ describe("agentLoop tool termination", () => {
             type: "toolCall",
             id: "call-initial-prepare",
             name: "prepare",
-            arguments: { action: "prepare" },
+            arguments: { room: "auto" },
           },
         ]);
         stream.push({ type: "done", reason: "toolUse", message });
@@ -1668,7 +1678,10 @@ describe("agentLoop tool termination", () => {
           initialRunLifecycle: {
             kind: "require_tool",
             toolName: "prepare",
-            requiredArguments: { action: "prepare" },
+            requiredArguments: {
+              action: "prepare",
+              reference_time_iso: referenceTimeIso,
+            },
             violationMode: "fail_run",
           },
         },
@@ -1679,6 +1692,11 @@ describe("agentLoop tool termination", () => {
 
     expect(providerCalls).toBe(1);
     expect(executed).toEqual(["prepare"]);
+    expect(executedArgs).toEqual({
+      action: "prepare",
+      reference_time_iso: referenceTimeIso,
+      room: "auto",
+    });
     expect(events.at(-1)).toMatchObject({ type: "agent_end" });
   });
 
@@ -1731,7 +1749,16 @@ describe("agentLoop tool termination", () => {
     expect(result.at(-1)).toMatchObject({
       role: "assistant",
       stopReason: "error",
-      errorMessage: expect.stringContaining("was not executed successfully"),
+      content: [{ type: "text", text: expect.stringContaining("没有复用旧结果") }],
+      errorMessage: expect.stringContaining("provider_initial_call_invalid"),
+      runLifecycleIncident: {
+        contract_id: "openclaw_required_tool_lifecycle_incident_v1",
+        execution_started: false,
+        reason: "provider_initial_call_invalid",
+        retry_allowed: false,
+        stage: "required_tool",
+        tool: "prepare",
+      },
     });
   });
 
@@ -1787,7 +1814,8 @@ describe("agentLoop tool termination", () => {
     expect(result.at(-1)).toMatchObject({
       role: "assistant",
       stopReason: "error",
-      errorMessage: expect.stringContaining("was not executed successfully"),
+      content: [{ type: "text", text: expect.stringContaining("没有复用旧结果") }],
+      errorMessage: expect.stringContaining("provider_initial_call_invalid"),
     });
   });
 

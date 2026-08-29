@@ -1,4 +1,5 @@
 import type { AssistantMessage, Model } from "@openclaw/llm-core";
+import { RequiredToolLifecycleError } from "./errors.js";
 import type { AgentEvent, AgentMessage } from "./types.js";
 
 /** Canonical empty aborted/error assistant recorded when a run ends without output. */
@@ -7,9 +8,12 @@ export function createFailureMessage(
   error: unknown,
   aborted: boolean,
 ): AssistantMessage {
-  return {
+  const lifecycleFailure = error instanceof RequiredToolLifecycleError ? error : undefined;
+  const message: AssistantMessage & {
+    runLifecycleIncident?: RequiredToolLifecycleError["runLifecycleIncident"];
+  } = {
     role: "assistant",
-    content: [{ type: "text", text: "" }],
+    content: [{ type: "text", text: lifecycleFailure?.publicText ?? "" }],
     api: model.api,
     provider: model.provider,
     model: model.id,
@@ -24,7 +28,11 @@ export function createFailureMessage(
       totalTokens: 0,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
+    ...(lifecycleFailure
+      ? { runLifecycleIncident: lifecycleFailure.runLifecycleIncident }
+      : {}),
   };
+  return message;
 }
 
 // Not re-exported from the package barrel on purpose: these helpers are

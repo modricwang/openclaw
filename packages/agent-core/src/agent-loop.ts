@@ -9,7 +9,7 @@ import type {
   ToolResultMessage,
 } from "@openclaw/llm-core";
 import type { EventStream as SourceEventStream } from "@openclaw/llm-core";
-import { TranscriptNotContinuableError } from "./errors.js";
+import { RequiredToolLifecycleError, TranscriptNotContinuableError } from "./errors.js";
 import { uuidv7 } from "./harness/session/uuid.js";
 import { resolveAgentReasoningOption } from "./reasoning.js";
 import { type AgentCoreStreamRuntimeDeps, resolveAgentCoreStreamFn } from "./runtime-deps.js";
@@ -292,9 +292,11 @@ async function runLoop(
       (tool) => tool.name === requiredToolLifecycle?.toolName,
     );
     if (!requiredTool) {
-      throw new Error(
-        `Required initial run-lifecycle tool "${requiredToolLifecycle.toolName}" is unavailable.`,
-      );
+      throw new RequiredToolLifecycleError({
+        toolName: requiredToolLifecycle.toolName,
+        reason: "required_tool_unavailable",
+        executionStarted: false,
+      });
     }
     currentContext = { ...currentContext, tools: [requiredTool] };
     config = Object.assign({}, config, {
@@ -391,9 +393,11 @@ async function runLoop(
           toolCalls.length !== 1 ||
           message.content.some((content) => content.type === "text"))
       ) {
-        throw new Error(
-          `Required initial run-lifecycle tool "${requiredToolLifecycle.toolName}" was not executed successfully.`,
-        );
+        throw new RequiredToolLifecycleError({
+          toolName: requiredToolLifecycle.toolName,
+          reason: "provider_initial_call_invalid",
+          executionStarted: false,
+        });
       }
 
       const toolResults: ToolResultMessage[] = [];
@@ -426,9 +430,11 @@ async function runLoop(
         requiredToolLifecycle?.violationMode === "fail_run" &&
         executedToolBatch?.requiredToolSatisfied !== true
       ) {
-        throw new Error(
-          `Required initial run-lifecycle tool "${requiredToolLifecycle.toolName}" was not executed successfully.`,
-        );
+        throw new RequiredToolLifecycleError({
+          toolName: requiredToolLifecycle.toolName,
+          reason: "required_tool_failed",
+          executionStarted: null,
+        });
       }
       if (executedToolBatch?.terminate || isFinalResponseOnlyTurn) {
         await emit({ type: "agent_end", messages: newMessages });
@@ -971,44 +977,6 @@ function shouldTerminateToolBatch(finalizedCalls: FinalizedToolCallOutcome[]): b
   );
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
-function isStructurallyEqual(left: unknown, right: unknown): boolean {
-  if (Object.is(left, right)) {
-    return true;
-  }
-  if (Array.isArray(left) || Array.isArray(right)) {
-    return (
-      Array.isArray(left) &&
-      Array.isArray(right) &&
-      left.length === right.length &&
-      left.every((entry, index) => isStructurallyEqual(entry, right[index]))
-    );
-  }
-  if (!isPlainRecord(left) || !isPlainRecord(right)) {
-    return false;
-  }
-  const leftKeys = Object.keys(left).toSorted();
-  const rightKeys = Object.keys(right).toSorted();
-  return (
-    leftKeys.length === rightKeys.length &&
-    leftKeys.every(
-      (key, index) => key === rightKeys[index] && isStructurallyEqual(left[key], right[key]),
-    )
-  );
-}
-
-function includesRequiredArguments(actual: unknown, required: Record<string, unknown>): boolean {
-  if (!isPlainRecord(actual)) {
-    return false;
-  }
-  return Object.entries(required).every(
-    ([key, value]) => Object.hasOwn(actual, key) && isStructurallyEqual(actual[key], value),
-  );
-}
-
 function prepareToolCallArguments(tool: AgentTool, toolCall: AgentToolCall): AgentToolCall {
   if (!tool.prepareArguments) {
     return toolCall;
@@ -1108,7 +1076,21 @@ async function prepareToolCall(
 
   let preparedToolCall: AgentToolCall;
   try {
-    preparedToolCall = prepareToolCallArguments(tool, toolCall);
+    const lifecycleBoundToolCall =
+      requiredToolLifecycle && toolCall.name === requiredToolLifecycle.toolName
+        ? {
+            ...toolCall,
+            arguments: {
+              ...(toolCall.arguments &&
+              typeof toolCall.arguments === "object" &&
+              !Array.isArray(toolCall.arguments)
+                ? toolCall.arguments
+                : {}),
+              ...requiredToolLifecycle.requiredArguments,
+            },
+          }
+        : toolCall;
+    preparedToolCall = prepareToolCallArguments(tool, lifecycleBoundToolCall);
   } catch (error) {
     return {
       kind: "immediate",
@@ -1130,8 +1112,7 @@ async function prepareToolCall(
   }
   if (
     requiredToolLifecycle &&
-    (toolCall.name !== requiredToolLifecycle.toolName ||
-      !includesRequiredArguments(validatedArgs, requiredToolLifecycle.requiredArguments))
+    toolCall.name !== requiredToolLifecycle.toolName
   ) {
     return {
       kind: "immediate",
@@ -1182,7 +1163,7 @@ async function prepareToolCall(
     }
     return {
       kind: "prepared",
-      toolCall,
+      toolCall: preparedToolCall,
       tool,
       args: validatedArgs,
     };
