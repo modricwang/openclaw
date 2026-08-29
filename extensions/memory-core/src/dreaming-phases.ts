@@ -14,6 +14,7 @@ import {
 import type { MemorySearchResult } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
 import {
   formatMemoryDreamingDay,
+  resolveMemoryDreamingNarrativeLanguage,
   resolveMemoryDreamingWorkspaces,
   resolveMemoryLightDreamingConfig,
   resolveMemoryRemDreamingConfig,
@@ -35,6 +36,7 @@ import {
 import { writeDailyDreamingPhaseBlock } from "./dreaming-markdown.js";
 import {
   generateAndAppendDreamNarrative,
+  mergeNarrativePhaseData,
   readRecentDreamDiaryEntries,
   type NarrativePhaseData,
   runDetachedDreamNarrative,
@@ -1585,10 +1587,8 @@ async function runLightDreaming(params: {
   primaryWorkspaceDir?: string;
   config: LightDreamingConfig;
   logger: Logger;
-  subagent?: Parameters<typeof generateAndAppendDreamNarrative>[0]["subagent"];
-  detachNarratives?: boolean;
   nowMs?: number;
-}): Promise<void> {
+}): Promise<NarrativePhaseData | null> {
   const nowMs = Number.isFinite(params.nowMs) ? (params.nowMs as number) : Date.now();
   await ingestDailyMemorySignals({
     workspaceDir: params.workspaceDir,
@@ -1654,44 +1654,21 @@ async function runLightDreaming(params: {
       `memory-core: light dreaming staged ${Math.min(entries.length, params.config.limit)} candidate(s) [workspace=${params.workspaceDir}].`,
     );
   }
-  // Generate dream diary narrative from the staged entries.
-  if (params.subagent && capped.length > 0) {
-    const themes = uniqueStrings(capped.flatMap((e) => e.conceptTags).filter(Boolean));
-    const data: NarrativePhaseData = {
-      phase: "light",
-      snippets: capped.map((e) => e.snippet).filter(Boolean),
-      currentDate: formatMemoryDreamingDay(nowMs, params.config.timezone),
-      ...(themes.length > 0 ? { themes } : {}),
-      ...(recentDiaryEntries.length > 0 ? { recentDiaryEntries } : {}),
-    };
-    if (params.detachNarratives) {
-      runDetachedDreamNarrative({
-        subagent: params.subagent,
-        workspaceDir: params.workspaceDir,
-        ...(params.config.storage.dreamsPath
-          ? { dreamsPath: params.config.storage.dreamsPath }
-          : {}),
-        data,
-        nowMs,
-        timezone: params.config.timezone,
-        model: params.config.execution?.model,
-        logger: params.logger,
-      });
-    } else {
-      await generateAndAppendDreamNarrative({
-        subagent: params.subagent,
-        workspaceDir: params.workspaceDir,
-        ...(params.config.storage.dreamsPath
-          ? { dreamsPath: params.config.storage.dreamsPath }
-          : {}),
-        data,
-        nowMs,
-        timezone: params.config.timezone,
-        model: params.config.execution?.model,
-        logger: params.logger,
-      });
-    }
+  if (capped.length === 0) {
+    return null;
   }
+  const themes = uniqueStrings(capped.flatMap((entry) => entry.conceptTags).filter(Boolean));
+  return {
+    phase: "light",
+    snippets: capped
+      .slice(0, 8)
+      .map((entry) => entry.snippet)
+      .filter(Boolean),
+    currentDate: formatMemoryDreamingDay(nowMs, params.config.timezone),
+    ...(themes.length > 0 ? { themes } : {}),
+    ...(recentDiaryEntries.length > 0 ? { recentDiaryEntries } : {}),
+    ...(params.config.execution?.model ? { model: params.config.execution.model } : {}),
+  };
 }
 
 async function runRemDreaming(params: {
@@ -1700,10 +1677,8 @@ async function runRemDreaming(params: {
   primaryWorkspaceDir?: string;
   config: RemDreamingConfig;
   logger: Logger;
-  subagent?: Parameters<typeof generateAndAppendDreamNarrative>[0]["subagent"];
-  detachNarratives?: boolean;
   nowMs?: number;
-}): Promise<void> {
+}): Promise<NarrativePhaseData | null> {
   const nowMs = Number.isFinite(params.nowMs) ? (params.nowMs as number) : Date.now();
   await ingestDailyMemorySignals({
     workspaceDir: params.workspaceDir,
@@ -1768,51 +1743,23 @@ async function runRemDreaming(params: {
       `memory-core: REM dreaming wrote reflections from ${entries.length} recent memory trace(s) [workspace=${params.workspaceDir}].`,
     );
   }
-  // Generate dream diary narrative from REM reflections.
-  if (params.subagent && entries.length > 0) {
-    const snippets = preview.candidateTruths.map((t) => t.snippet).filter(Boolean);
-    const themes = preview.reflections.filter(
-      (r) => !r.startsWith("- No strong") && !r.startsWith("  -"),
-    );
-    const data: NarrativePhaseData = {
-      phase: "rem",
-      snippets:
-        snippets.length > 0
-          ? snippets
-          : entries
-              .slice(0, 8)
-              .map((e) => e.snippet)
-              .filter(Boolean),
-      ...(themes.length > 0 ? { themes } : {}),
-    };
-    if (params.detachNarratives) {
-      runDetachedDreamNarrative({
-        subagent: params.subagent,
-        workspaceDir: params.workspaceDir,
-        ...(params.config.storage.dreamsPath
-          ? { dreamsPath: params.config.storage.dreamsPath }
-          : {}),
-        data,
-        nowMs,
-        timezone: params.config.timezone,
-        model: params.config.execution?.model,
-        logger: params.logger,
-      });
-    } else {
-      await generateAndAppendDreamNarrative({
-        subagent: params.subagent,
-        workspaceDir: params.workspaceDir,
-        ...(params.config.storage.dreamsPath
-          ? { dreamsPath: params.config.storage.dreamsPath }
-          : {}),
-        data,
-        nowMs,
-        timezone: params.config.timezone,
-        model: params.config.execution?.model,
-        logger: params.logger,
-      });
-    }
+  const snippets = preview.candidateTruths
+    .slice(0, 2)
+    .map((truth) => truth.snippet)
+    .filter(Boolean);
+  const themes = preview.reflections.filter(
+    (reflection) => !reflection.startsWith("- No strong") && !reflection.startsWith("  -"),
+  );
+  if (snippets.length === 0 && themes.length === 0) {
+    return null;
   }
+  return {
+    phase: "rem",
+    snippets,
+    currentDate: formatMemoryDreamingDay(nowMs, params.config.timezone),
+    ...(themes.length > 0 ? { themes } : {}),
+    ...(params.config.execution?.model ? { model: params.config.execution.model } : {}),
+  };
 }
 
 export async function runDreamingSweepPhases(params: {
@@ -1823,25 +1770,31 @@ export async function runDreamingSweepPhases(params: {
   subagent?: Parameters<typeof generateAndAppendDreamNarrative>[0]["subagent"];
   detachNarratives?: boolean;
   nowMs?: number;
-}): Promise<void> {
+}): Promise<NarrativePhaseData | null> {
   // Normalize nowMs once so all phase timestamps and narrative session keys are consistent.
   const sweepNowMs: number = Number.isFinite(params.nowMs) ? (params.nowMs as number) : Date.now();
 
+  const language = resolveMemoryDreamingNarrativeLanguage({
+    pluginConfig: params.pluginConfig,
+    cfg: params.cfg as Parameters<typeof resolveMemoryDreamingNarrativeLanguage>[0]["cfg"],
+  });
+  const narrativeParts: NarrativePhaseData[] = [];
   const light = resolveMemoryLightDreamingConfig({
     pluginConfig: params.pluginConfig,
     cfg: params.cfg as Parameters<typeof resolveMemoryLightDreamingConfig>[0]["cfg"],
   });
   if (light.enabled && light.limit > 0) {
     try {
-      await runLightDreaming({
+      const lightNarrative = await runLightDreaming({
         workspaceDir: params.workspaceDir,
         cfg: params.cfg,
         config: light,
         logger: params.logger,
-        subagent: params.subagent,
         nowMs: sweepNowMs,
-        detachNarratives: params.detachNarratives,
       });
+      if (lightNarrative) {
+        narrativeParts.push(lightNarrative);
+      }
     } catch (err) {
       await appendFailedDreamingEvent({
         workspaceDir: params.workspaceDir,
@@ -1861,15 +1814,16 @@ export async function runDreamingSweepPhases(params: {
   });
   if (rem.enabled && rem.limit > 0) {
     try {
-      await runRemDreaming({
+      const remNarrative = await runRemDreaming({
         workspaceDir: params.workspaceDir,
         cfg: params.cfg,
         config: rem,
         logger: params.logger,
-        subagent: params.subagent,
         nowMs: sweepNowMs,
-        detachNarratives: params.detachNarratives,
       });
+      if (remNarrative) {
+        narrativeParts.push(remNarrative);
+      }
     } catch (err) {
       await appendFailedDreamingEvent({
         workspaceDir: params.workspaceDir,
@@ -1882,5 +1836,24 @@ export async function runDreamingSweepPhases(params: {
       throw err;
     }
   }
+  const narrativeData = mergeNarrativePhaseData(narrativeParts, { language });
+  if (params.subagent && narrativeData) {
+    const narrativeParams = {
+      subagent: params.subagent,
+      workspaceDir: params.workspaceDir,
+      ...(light.storage.dreamsPath ? { dreamsPath: light.storage.dreamsPath } : {}),
+      data: narrativeData,
+      nowMs: sweepNowMs,
+      timezone: light.timezone,
+      model: narrativeData.model,
+      logger: params.logger,
+    };
+    if (params.detachNarratives) {
+      runDetachedDreamNarrative(narrativeParams);
+    } else {
+      await generateAndAppendDreamNarrative(narrativeParams);
+    }
+  }
+  return narrativeData;
 }
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

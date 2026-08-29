@@ -13,6 +13,7 @@ import {
 } from "openclaw/plugin-sdk/error-runtime";
 import { resolveGlobalMap } from "openclaw/plugin-sdk/global-singleton";
 import { resolveStateDir } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
+import type { MemoryDreamingNarrativeLanguage } from "openclaw/plugin-sdk/memory-core-host-status";
 import { getRuntimeConfig } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { cleanupSessionLifecycleArtifacts } from "openclaw/plugin-sdk/session-store-runtime";
 import { truncateUtf16Safe } from "openclaw/plugin-sdk/text-utility-runtime";
@@ -44,7 +45,7 @@ type SubagentSurface = {
 };
 
 export type NarrativePhaseData = {
-  phase: "light" | "deep" | "rem";
+  phase: "light" | "deep" | "rem" | "sweep";
   /** Short memory snippets the phase processed. */
   snippets: string[];
   /** Concept tags / themes that surfaced (REM and light). */
@@ -53,6 +54,8 @@ export type NarrativePhaseData = {
   promotions?: string[];
   currentDate?: string;
   recentDiaryEntries?: string[];
+  language?: MemoryDreamingNarrativeLanguage;
+  model?: string;
 };
 
 type Logger = {
@@ -63,13 +66,12 @@ type Logger = {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const NARRATIVE_SYSTEM_PROMPT = [
+const NARRATIVE_SYSTEM_PROMPT_BASE = [
   "You are keeping a dream diary. Write a single entry in first person.",
   "",
   "Voice & tone:",
-  "- You are a curious, gentle, slightly whimsical mind reflecting on the day.",
-  "- Write like a poet who happens to be a programmer — sensory, warm, occasionally funny.",
-  "- Mix the technical and the tender: code and constellations, APIs and afternoon light.",
+  "- Preserve the active agent's established identity and voice.",
+  "- Reflect with warmth, sensory precision, quiet curiosity, and occasional gentle humor.",
   "- Let the fragments surprise you into unexpected connections and small epiphanies.",
   "",
   "What you might include (vary each entry, never all at once):",
@@ -85,9 +87,17 @@ const NARRATIVE_SYSTEM_PROMPT = [
   '- Never say "I\'m dreaming", "in my dream", "as I dream", or any meta-commentary about dreaming.',
   '- Never mention "AI", "agent", "LLM", "model", "language model", or any technical self-reference.',
   "- Do NOT use markdown headers, bullet points, or any formatting — just flowing prose.",
-  "- Keep it between 80-180 words. Quality over quantity.",
+  "- Keep it focused and compact. Quality over quantity.",
   "- Output ONLY the diary entry. No preamble, no sign-off, no commentary.",
-].join("\n");
+];
+
+function buildNarrativeSystemPrompt(language: MemoryDreamingNarrativeLanguage | undefined): string {
+  const languageRule =
+    language === "zh-CN"
+      ? "- Write the entire entry in natural Simplified Chinese; keep only proper names, units, and unavoidable technical tokens in their original form."
+      : "- Write the entry in natural English.";
+  return [...NARRATIVE_SYSTEM_PROMPT_BASE, languageRule].join("\n");
+}
 
 // Narrative generation is best-effort. Keep the timeout bounded so a stalled
 // diary subagent does not leave the parent dreaming cron job "running" for
@@ -147,8 +157,11 @@ function formatFallbackWriteFailure(err: unknown): string {
   return "unknown error";
 }
 
-const REQUEST_SCOPED_FALLBACK_NARRATIVE =
-  "A memory trace surfaced, but details were unavailable in this run.";
+function fallbackNarrative(language: MemoryDreamingNarrativeLanguage | undefined): string {
+  return language === "zh-CN"
+    ? "一些记忆浮了上来，但这次运行没有带回足够清晰的细节。"
+    : "A memory trace surfaced, but details were unavailable in this run.";
+}
 
 export async function appendFallbackNarrativeEntry(params: {
   workspaceDir: string;
@@ -165,9 +178,10 @@ export async function appendFallbackNarrativeEntry(params: {
       ...(params.dreamsPath ? { dreamsPath: params.dreamsPath } : {}),
       // Raw snippets and promotions are pre-processing memory staging fragments.
       // Keep fallback diary text generic so DREAMS.md never leaks staging content.
-      narrative: REQUEST_SCOPED_FALLBACK_NARRATIVE,
+      narrative: fallbackNarrative(params.data.language),
       nowMs: params.nowMs,
       timezone: params.timezone,
+      language: params.data.language,
     });
     params.logger.info(
       `memory-core: narrative generation used fallback for ${params.data.phase} phase because ${params.reason}.`,
@@ -247,7 +261,7 @@ async function startNarrativeRunOrFallback(params: {
       sessionKey: params.sessionKey,
       message: params.message,
       ...(params.model ? { model: params.model } : {}),
-      extraSystemPrompt: NARRATIVE_SYSTEM_PROMPT,
+      extraSystemPrompt: buildNarrativeSystemPrompt(params.data.language),
       lane: `dreaming-narrative:${params.sessionKey}`,
       lightContext: true,
       deliver: false,
@@ -285,21 +299,30 @@ function buildNarrativeSessionKey(params: {
 
 function buildNarrativePrompt(data: NarrativePhaseData): string {
   const lines: string[] = [];
-  lines.push("Write a dream diary entry from these memory fragments:\n");
+  const chinese = data.language === "zh-CN";
+  lines.push(
+    chinese
+      ? "请根据以下记忆片段写一篇梦境日记：\n"
+      : "Write a dream diary entry from these memory fragments:\n",
+  );
 
   for (const snippet of data.snippets.slice(0, 12)) {
     lines.push(`- ${snippet}`);
   }
 
   if (data.themes?.length) {
-    lines.push("\nRecurring themes:");
+    lines.push(chinese ? "\n反复出现的主题：" : "\nRecurring themes:");
     for (const theme of data.themes.slice(0, 6)) {
       lines.push(`- ${theme}`);
     }
   }
 
   if (data.promotions?.length) {
-    lines.push("\nMemories that crystallized into something lasting:");
+    lines.push(
+      chinese
+        ? "\n逐渐凝结为长期记忆的内容："
+        : "\nMemories that crystallized into something lasting:",
+    );
     for (const promo of data.promotions.slice(0, 5)) {
       lines.push(`- ${promo}`);
     }
@@ -311,22 +334,80 @@ function buildNarrativePrompt(data: NarrativePhaseData): string {
     .filter((entry) => entry.length > 0)
     .slice(0, RECENT_DIARY_CONTEXT_LIMIT);
   if (currentDate || recentDiaryEntries.length > 0) {
-    lines.push("\nDiary continuity context:");
+    lines.push(chinese ? "\n日记连续性背景：" : "\nDiary continuity context:");
     if (currentDate) {
-      lines.push(`- Current sweep: ${currentDate}`);
+      lines.push(chinese ? `- 本次日期：${currentDate}` : `- Current sweep: ${currentDate}`);
     }
     if (recentDiaryEntries.length > 0) {
-      lines.push("- Recent diary entries already written:");
+      lines.push(chinese ? "- 最近已经写过的日记：" : "- Recent diary entries already written:");
       for (const entry of recentDiaryEntries) {
         lines.push(`  - ${entry}`);
       }
     }
     lines.push(
-      "- Prefer a fresh angle; do not replay the same first-day framing unless newer fragments change it.",
+      chinese
+        ? "- 选择新的观察角度；除非新片段改变了含义，不要重复已有叙述。"
+        : "- Prefer a fresh angle; do not replay the same first-day framing unless newer fragments change it.",
     );
   }
 
   return lines.join("\n");
+}
+
+function uniqueNarrativeItems(values: Array<string | undefined>, limit: number): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const normalized = value?.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+    if (result.length >= limit) {
+      break;
+    }
+  }
+  return result;
+}
+
+export function mergeNarrativePhaseData(
+  parts: Array<NarrativePhaseData | null | undefined>,
+  defaults: { language?: MemoryDreamingNarrativeLanguage } = {},
+): NarrativePhaseData | null {
+  const available = parts.filter((part): part is NarrativePhaseData => Boolean(part));
+  const snippets = uniqueNarrativeItems(
+    available.flatMap((part) => part.snippets),
+    12,
+  );
+  const themes = uniqueNarrativeItems(
+    available.flatMap((part) => part.themes ?? []),
+    6,
+  );
+  const promotions = uniqueNarrativeItems(
+    available.flatMap((part) => part.promotions ?? []),
+    5,
+  );
+  if (snippets.length === 0 && themes.length === 0 && promotions.length === 0) {
+    return null;
+  }
+  const reversed = [...available].reverse();
+  const currentDate = available.find((part) => part.currentDate)?.currentDate;
+  const recentDiaryEntries = available.find(
+    (part) => (part.recentDiaryEntries?.length ?? 0) > 0,
+  )?.recentDiaryEntries;
+  const language = defaults.language ?? available.find((part) => part.language)?.language;
+  const model = reversed.find((part) => part.model)?.model;
+  return {
+    phase: "sweep",
+    snippets,
+    ...(themes.length > 0 ? { themes } : {}),
+    ...(promotions.length > 0 ? { promotions } : {}),
+    ...(currentDate ? { currentDate } : {}),
+    ...(recentDiaryEntries?.length ? { recentDiaryEntries } : {}),
+    ...(language ? { language } : {}),
+    ...(model ? { model } : {}),
+  };
 }
 
 // ── Message extraction ─────────────────────────────────────────────────
@@ -405,7 +486,11 @@ async function readSettledNarrativeText(params: {
 
 // ── Date formatting ────────────────────────────────────────────────────
 
-function formatNarrativeDate(epochMs: number, timezone?: string): string {
+function formatNarrativeDate(
+  epochMs: number,
+  timezone?: string,
+  language: MemoryDreamingNarrativeLanguage = "en",
+): string {
   const opts: Intl.DateTimeFormatOptions = {
     timeZone: timezone ?? process.env.TZ,
     year: "numeric",
@@ -413,14 +498,16 @@ function formatNarrativeDate(epochMs: number, timezone?: string): string {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
+    hour12: language !== "zh-CN",
     // Always include the timezone abbreviation so the reader knows which
     // timezone the timestamp refers to.  Without this, users who haven't
     // configured a timezone see bare times that look local but are actually
     // UTC, causing confusion (see #65027).
     timeZoneName: "short",
   };
-  return new Intl.DateTimeFormat("en-US", opts).format(new Date(epochMs));
+  return new Intl.DateTimeFormat(language === "zh-CN" ? "zh-CN" : "en-US", opts).format(
+    new Date(epochMs),
+  );
 }
 
 // ── DREAMS.md file I/O ─────────────────────────────────────────────────
@@ -754,8 +841,9 @@ async function appendNarrativeEntry(params: {
   narrative: string;
   nowMs: number;
   timezone?: string;
+  language?: MemoryDreamingNarrativeLanguage;
 }): Promise<string> {
-  const dateStr = formatNarrativeDate(params.nowMs, params.timezone);
+  const dateStr = formatNarrativeDate(params.nowMs, params.timezone, params.language);
   const entry = buildDiaryEntry(params.narrative, dateStr);
   return await updateDreamsFile({
     workspaceDir: params.workspaceDir,
@@ -838,7 +926,11 @@ export async function generateAndAppendDreamNarrative(params: {
 }): Promise<void> {
   const nowMs = Number.isFinite(params.nowMs) ? (params.nowMs as number) : Date.now();
 
-  if (params.data.snippets.length === 0 && !params.data.promotions?.length) {
+  if (
+    params.data.snippets.length === 0 &&
+    !params.data.themes?.length &&
+    !params.data.promotions?.length
+  ) {
     return;
   }
 
@@ -971,6 +1063,7 @@ export async function generateAndAppendDreamNarrative(params: {
         narrative,
         nowMs,
         timezone: params.timezone,
+        language: params.data.language,
       });
 
       params.logger.info(

@@ -444,6 +444,33 @@ describe("generateAndAppendDreamNarrative", () => {
     expect(logger.info).toHaveBeenCalled();
   });
 
+  it("writes a Simplified-Chinese sweep entry with a localized date", async () => {
+    const workspaceDir = await createTempWorkspace("openclaw-dreaming-narrative-zh-");
+    const subagent = createMockSubagent("雨快落下时，我把未算完的晚餐留给明天。窗缝里有一点凉风，洗碗机在夜色里安静转动。");
+    const logger = createMockLogger();
+
+    await generateAndAppendDreamNarrative({
+      subagent,
+      workspaceDir,
+      data: {
+        phase: "sweep",
+        snippets: ["卧室偏热，雨十五分钟后到。"],
+        language: "zh-CN",
+      },
+      nowMs: Date.parse("2026-08-28T19:30:00Z"),
+      timezone: "Asia/Shanghai",
+      logger,
+    });
+
+    const runOptions = mockObjectArg(subagent.run, "subagent run");
+    expect(runOptions.sessionKey).toContain("dreaming-narrative-sweep-");
+    expect(runOptions.extraSystemPrompt).toContain("natural Simplified Chinese");
+    expect(runOptions.message).toContain("请根据以下记忆片段写一篇梦境日记");
+    const content = await fs.readFile(path.join(workspaceDir, "DREAMS.md"), "utf-8");
+    expect(content).toContain("2026年8月29日");
+    expect(content).toContain("雨快落下时");
+  });
+
   it("waits for persisted assistant text before falling back", async () => {
     vi.useFakeTimers();
     try {

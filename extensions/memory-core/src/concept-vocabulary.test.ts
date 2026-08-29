@@ -49,6 +49,15 @@ describe("concept vocabulary", () => {
     expect(tags).toContain("css3");
   });
 
+  it("keeps timestamped daily-note filenames as provenance instead of concept tags", () => {
+    const tags = deriveConceptTags({
+      path: "memory/2026-08-26-2258.md",
+      snippet: "晚饭后开窗通风，雨来前把洗碗机启动。",
+    });
+
+    expect(tags).not.toContain("2026-08-26-2258.md");
+  });
+
   it("extracts protected and segmented CJK concept tags", () => {
     const tags = deriveConceptTags({
       path: "memory/2026-04-04.md",

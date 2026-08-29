@@ -14,7 +14,9 @@ import {
   MANAGED_MEMORY_DREAMING_CRON_NAME as MANAGED_DREAMING_CRON_NAME,
   MANAGED_MEMORY_DREAMING_CRON_TAG as MANAGED_DREAMING_CRON_TAG,
   MEMORY_DREAMING_SYSTEM_EVENT_TEXT as DREAMING_SYSTEM_EVENT_TEXT,
+  formatMemoryDreamingDay,
   resolveMemoryDeepDreamingConfig,
+  resolveMemoryDreamingNarrativeLanguage,
   resolveMemoryDreamingWorkspaces,
 } from "openclaw/plugin-sdk/memory-core-host-status";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
@@ -112,6 +114,7 @@ type ShortTermPromotionDreamingConfig = {
   maxAgeDays?: number;
   maxPromotedSnippetTokens?: number;
   verboseLogging: boolean;
+  narrativeLanguage: "en" | "zh-CN";
   storage?: {
     mode: "inline" | "separate" | "both";
     separateReports: boolean;
@@ -407,6 +410,7 @@ export function resolveShortTermPromotionDreamingConfig(params: {
     maxPromotedSnippetTokens:
       resolved.maxPromotedSnippetTokens ?? DEFAULT_MEMORY_DREAMING_MAX_PROMOTED_SNIPPET_TOKENS,
     verboseLogging: resolved.verboseLogging,
+    narrativeLanguage: resolveMemoryDreamingNarrativeLanguage(params),
     storage: resolved.storage,
     ...(resolved.execution.model ? { execution: { model: resolved.execution.model } } : {}),
   };
@@ -558,10 +562,9 @@ async function runShortTermDreamingPromotionIfTriggered(params: {
   let totalApplied = 0;
   let failedWorkspaces = 0;
   const pluginConfig = params.cfg ? resolveMemoryDreamingPluginConfig(params.cfg) : undefined;
-  const detachNarratives = params.trigger === "cron";
   const [
     { writeDeepDreamingReport },
-    { appendFallbackNarrativeEntry, generateAndAppendDreamNarrative, runDetachedDreamNarrative },
+    { appendFallbackNarrativeEntry, generateAndAppendDreamNarrative, mergeNarrativePhaseData },
     { runDreamingSweepPhases },
     {
       applyShortTermPromotions,
@@ -577,14 +580,13 @@ async function runShortTermDreamingPromotionIfTriggered(params: {
   ]);
   for (const workspaceDir of workspaces) {
     const sweepNowMs = Date.now();
+    let phaseNarrativeData: NarrativePhaseData | null = null;
     try {
-      await runDreamingSweepPhases({
+      phaseNarrativeData = await runDreamingSweepPhases({
         workspaceDir,
         pluginConfig,
         cfg: params.cfg,
         logger: params.logger,
-        subagent: params.subagent,
-        detachNarratives,
         nowMs: sweepNowMs,
       });
     } catch (err) {
@@ -687,13 +689,24 @@ async function runShortTermDreamingPromotionIfTriggered(params: {
         timezone: params.config.timezone,
         storage: params.config.storage ?? { mode: "separate", separateReports: false },
       });
-      // Generate dream diary narrative from promoted memories.
-      if (candidates.length > 0 || applied.applied > 0) {
-        const data: NarrativePhaseData = {
+      const deepNarrativeData: NarrativePhaseData | null =
+        candidates.length > 0 || applied.applied > 0
+          ? {
           phase: "deep",
-          snippets: candidates.map((c) => c.snippet).filter(Boolean),
+          snippets: candidates
+            .slice(0, 2)
+            .map((candidate) => candidate.snippet)
+            .filter(Boolean),
           promotions: applied.appliedCandidates.map((c) => c.snippet).filter(Boolean),
-        };
+          currentDate: formatMemoryDreamingDay(sweepNowMs, params.config.timezone),
+          language: params.config.narrativeLanguage,
+          ...(params.config.execution?.model ? { model: params.config.execution.model } : {}),
+        }
+          : null;
+      const data = mergeNarrativePhaseData([phaseNarrativeData, deepNarrativeData], {
+        language: params.config.narrativeLanguage,
+      });
+      if (data) {
         if (!params.subagent) {
           await appendFallbackNarrativeEntry({
             workspaceDir,
@@ -706,19 +719,6 @@ async function runShortTermDreamingPromotionIfTriggered(params: {
             logger: params.logger,
             reason: "subagent runtime is unavailable",
           });
-        } else if (detachNarratives) {
-          runDetachedDreamNarrative({
-            subagent: params.subagent,
-            workspaceDir,
-            ...(params.config.storage?.dreamsPath
-              ? { dreamsPath: params.config.storage.dreamsPath }
-              : {}),
-            data,
-            nowMs: sweepNowMs,
-            timezone: params.config.timezone,
-            model: params.config.execution?.model,
-            logger: params.logger,
-          });
         } else {
           await generateAndAppendDreamNarrative({
             subagent: params.subagent,
@@ -729,7 +729,7 @@ async function runShortTermDreamingPromotionIfTriggered(params: {
             data,
             nowMs: sweepNowMs,
             timezone: params.config.timezone,
-            model: params.config.execution?.model,
+            model: data.model,
             logger: params.logger,
           });
         }

@@ -8,6 +8,7 @@ import {
   resolveMemoryDreamingPluginId,
   resolveMemoryDreamingConfig,
   resolveMemoryDreamingDreamsPath,
+  resolveMemoryDreamingNarrativeLanguage,
   resolveMemoryDreamingWorkspaces,
 } from "./dreaming.js";
 
@@ -20,6 +21,7 @@ describe("memory dreaming host helpers", () => {
           frequency: "0 */4 * * *",
           timezone: "Europe/London",
           model: " anthropic/claude-sonnet-4-6 ",
+          narrative: { language: "zh-CN" },
           storage: {
             mode: "both",
             separateReports: true,
@@ -44,6 +46,12 @@ describe("memory dreaming host helpers", () => {
     expect(resolved.frequency).toBe("0 */4 * * *");
     expect(resolved.timezone).toBe("Europe/London");
     expect(resolved.execution.defaults.model).toBe("anthropic/claude-sonnet-4-6");
+    expect(resolved.narrative.language).toBe("zh-CN");
+    expect(
+      resolveMemoryDreamingNarrativeLanguage({
+        pluginConfig: { dreaming: { narrative: { language: "zh-CN" } } },
+      }),
+    ).toBe("zh-CN");
     expect(resolved.phases.light.execution.model).toBe("anthropic/claude-sonnet-4-6");
     expect(resolved.phases.deep.execution.model).toBe("anthropic/claude-sonnet-4-6");
     expect(resolved.phases.rem.execution.model).toBe("anthropic/claude-sonnet-4-6");

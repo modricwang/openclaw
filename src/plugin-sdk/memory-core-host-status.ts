@@ -13,6 +13,7 @@ export {
   resolveMemoryDeepDreamingConfig,
   resolveMemoryDreamingConfig,
   resolveMemoryDreamingDreamsPath,
+  resolveMemoryDreamingNarrativeLanguage,
   resolveMemoryDreamingWorkspaces,
   resolveMemoryLightDreamingConfig,
   resolveMemoryRemDreamingConfig,
@@ -35,6 +36,7 @@ export {
 } from "../memory-host-sdk/dreaming.js";
 export type {
   MemoryDreamingDeepWriteMode,
+  MemoryDreamingNarrativeLanguage,
   MemoryDreamingPhaseName,
   MemoryDreamingStorageConfig,
 } from "../memory-host-sdk/dreaming.js";

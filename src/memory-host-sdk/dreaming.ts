@@ -24,6 +24,7 @@ const DEFAULT_MEMORY_DREAMING_TIMEZONE = undefined;
 const DEFAULT_MEMORY_DREAMING_VERBOSE_LOGGING = false;
 const DEFAULT_MEMORY_DREAMING_STORAGE_MODE = "separate";
 const DEFAULT_MEMORY_DREAMING_SEPARATE_REPORTS = false;
+const DEFAULT_MEMORY_DREAMING_NARRATIVE_LANGUAGE = "en";
 export const DEFAULT_MEMORY_DREAMING_FREQUENCY = "0 3 * * *";
 export const DEFAULT_MEMORY_DREAMING_PLUGIN_ID = "memory-core";
 export const MANAGED_MEMORY_DREAMING_CRON_NAME = "Memory Dreaming Promotion";
@@ -66,6 +67,7 @@ type MemoryDreamingThinking = "low" | "medium" | "high";
 type MemoryDreamingBudget = "cheap" | "medium" | "expensive";
 type MemoryDreamingStorageMode = "inline" | "separate" | "both";
 export type MemoryDreamingDeepWriteMode = "apply" | "report-only";
+export type MemoryDreamingNarrativeLanguage = "en" | "zh-CN";
 
 type MemoryLightDreamingSource = "daily" | "sessions" | "recall";
 type MemoryDeepDreamingSource = "daily" | "memory" | "sessions" | "logs" | "recall";
@@ -139,6 +141,9 @@ type MemoryDreamingConfig = {
   frequency: string;
   timezone?: string;
   verboseLogging: boolean;
+  narrative: {
+    language: MemoryDreamingNarrativeLanguage;
+  };
   storage: MemoryDreamingStorageConfig;
   execution: {
     defaults: MemoryDreamingExecutionConfig;
@@ -244,6 +249,12 @@ function normalizeStorageMode(value: unknown): MemoryDreamingStorageMode {
     return normalized;
   }
   return DEFAULT_MEMORY_DREAMING_STORAGE_MODE;
+}
+
+function normalizeNarrativeLanguage(value: unknown): MemoryDreamingNarrativeLanguage {
+  return normalizeTrimmedString(value) === "zh-CN"
+    ? "zh-CN"
+    : DEFAULT_MEMORY_DREAMING_NARRATIVE_LANGUAGE;
 }
 
 function normalizeDeepWriteMode(value: unknown): MemoryDreamingDeepWriteMode {
@@ -369,6 +380,7 @@ export function resolveMemoryDreamingConfig(params: {
     normalizeTrimmedString(dreaming?.timezone) ??
     normalizeTrimmedString(params.cfg?.agents?.defaults?.userTimezone) ??
     DEFAULT_MEMORY_DREAMING_TIMEZONE;
+  const narrative = asNullableRecord(dreaming?.narrative);
   const storage = asNullableRecord(dreaming?.storage);
   const execution = asNullableRecord(dreaming?.execution);
   const phases = asNullableRecord(dreaming?.phases);
@@ -396,6 +408,9 @@ export function resolveMemoryDreamingConfig(params: {
       dreaming?.verboseLogging,
       DEFAULT_MEMORY_DREAMING_VERBOSE_LOGGING,
     ),
+    narrative: {
+      language: normalizeNarrativeLanguage(narrative?.language),
+    },
     storage: {
       mode: normalizeStorageMode(storage?.mode),
       separateReports: normalizeBoolean(
@@ -523,6 +538,13 @@ export function resolveMemoryDreamingConfig(params: {
       },
     },
   };
+}
+
+export function resolveMemoryDreamingNarrativeLanguage(params: {
+  pluginConfig?: Record<string, unknown>;
+  cfg?: OpenClawConfig;
+}): MemoryDreamingNarrativeLanguage {
+  return resolveMemoryDreamingConfig(params).narrative.language;
 }
 
 export function resolveMemoryDeepDreamingConfig(params: {

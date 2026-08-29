@@ -1,5 +1,4 @@
 // Memory Core plugin module implements concept vocabulary behavior.
-import path from "node:path";
 import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/string-coerce-runtime";
 
 export const MAX_CONCEPT_TAGS = 8;
@@ -437,7 +436,9 @@ export function deriveConceptTags(params: {
   snippet: string;
   limit?: number;
 }): string[] {
-  const source = `${path.basename(params.path)} ${params.snippet}`;
+  // The path is provenance, not semantic evidence. Including daily/session
+  // basenames here made timestamped filenames outrank the actual memory text.
+  const source = params.snippet;
   const limit = Number.isFinite(params.limit)
     ? Math.max(0, Math.floor(params.limit as number))
     : MAX_CONCEPT_TAGS;

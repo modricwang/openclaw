@@ -30,6 +30,11 @@
       "placeholder": "anthropic/claude-sonnet-4-6",
       "help": "Optional provider/model override for Dream Diary narrative subagent runs. Requires plugins.entries.memory-core.subagent.allowModelOverride."
     },
+    "dreaming.narrative.language": {
+      "label": "Dream Diary Language",
+      "placeholder": "zh-CN",
+      "help": "Explicit language for the single human-facing Dream Diary entry written by each sweep."
+    },
     "dreaming.storage.dreamsPath": {
       "label": "Dream Diary Path",
       "placeholder": "memory/dreaming/DREAMS.md",
@@ -62,6 +67,16 @@
           },
           "verboseLogging": {
             "type": "boolean"
+          },
+          "narrative": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "language": {
+                "type": "string",
+                "enum": ["en", "zh-CN"]
+              }
+            }
           },
           "storage": {
             "type": "object",

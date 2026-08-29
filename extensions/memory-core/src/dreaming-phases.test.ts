@@ -510,7 +510,7 @@ describe("memory-core dreaming phases", () => {
     };
     const nowMs = Date.parse("2026-04-05T10:05:00.000Z");
     const workspaceHash = createHash("sha1").update(workspaceDir).digest("hex").slice(0, 12);
-    const expectedSessionKey = `dreaming-narrative-light-${workspaceHash}`;
+    const expectedSessionKey = `dreaming-narrative-sweep-${workspaceHash}`;
 
     await runDreamingSweepPhases({
       workspaceDir,
@@ -587,7 +587,7 @@ describe("memory-core dreaming phases", () => {
         subagent,
         nowMs: Date.parse("2026-04-05T10:05:00.000Z"),
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ phase: "sweep" });
 
     const dreams = await fs.readFile(path.join(workspaceDir, "DREAMS.md"), "utf-8");
     expect(dreams).toContain("A memory trace surfaced, but details were unavailable in this run.");
@@ -2847,7 +2847,7 @@ describe("memory-core dreaming phases", () => {
     );
   });
 
-  it("passes rem-dreaming snippets into the narrative pipeline", async () => {
+  it("keeps low-confidence REM observations out of the narrative snippets", async () => {
     const workspaceDir = await createDreamingWorkspace();
     const subagent = createMockNarrativeSubagent("The traces braided themselves into a map.");
     const { beforeAgentReply } = createHarness(
@@ -2902,12 +2902,59 @@ describe("memory-core dreaming phases", () => {
 
     expect(subagent.run).toHaveBeenCalledTimes(1);
     const firstRun = firstNarrativeRun(subagent);
-    expect(firstRun.message).toContain("Move backups to S3 Glacier.");
-    expect(firstRun.message).toContain("Keep retention at 365 days.");
+    expect(firstRun.message).not.toContain("Move backups to S3 Glacier.");
+    expect(firstRun.message).not.toContain("Keep retention at 365 days.");
+    expect(firstRun.message).toContain("Theme: `backup`");
     expect(firstRun.model).toBe("xai/grok-4.1-fast");
     await expect(fs.readFile(path.join(workspaceDir, "DREAMS.md"), "utf-8")).resolves.toContain(
       "The traces braided themselves into a map.",
     );
+  });
+
+  it("consolidates Light and REM evidence into one sweep narrative call", async () => {
+    const workspaceDir = await createDreamingWorkspace();
+    const subagent = createMockNarrativeSubagent("一整晚的线索终于收进同一页日记。");
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const config: OpenClawConfig = {
+      agents: { defaults: { workspace: workspaceDir, userTimezone: "Asia/Shanghai" } },
+      plugins: {
+        entries: {
+          "memory-core": {
+            config: {
+              dreaming: {
+                enabled: true,
+                narrative: { language: "zh-CN" },
+                phases: {
+                  light: { enabled: true, limit: 20, lookbackDays: 2 },
+                  rem: { enabled: true, limit: 10, lookbackDays: 7, minPatternStrength: 0 },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+    await writeDailyNote(workspaceDir, [
+      `# ${DREAMING_TEST_DAY}`,
+      "",
+      "- Move backups to S3 Glacier.",
+      "- Keep retention at 365 days.",
+    ]);
+
+    const result = await runDreamingSweepPhases({
+      workspaceDir,
+      cfg: config,
+      pluginConfig: resolveMemoryDreamingPluginConfig(config),
+      logger,
+      subagent,
+      nowMs: Date.parse("2026-04-05T10:05:00.000Z"),
+    });
+
+    expect(result).toMatchObject({ phase: "sweep", language: "zh-CN" });
+    expect(subagent.run).toHaveBeenCalledTimes(1);
+    const firstRun = firstNarrativeRun(subagent);
+    expect(firstRun.sessionKey).toContain("dreaming-narrative-sweep-");
+    expect(firstRun.message.match(/Move backups to S3 Glacier\./g)).toHaveLength(1);
   });
 
   it("increments dailyCount when the same daily file is re-ingested on a later day", async () => {
