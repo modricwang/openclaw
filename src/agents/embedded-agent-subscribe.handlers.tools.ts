@@ -1382,16 +1382,7 @@ export async function handleToolExecutionEnd(
   const isError = evt.isError;
   const result = evt.result;
   const toolSendReceiptResult = ctx.consumeToolSendReceipt?.(toolCallId);
-  const observerIsError = isError || isToolResultError(result);
-  const terminalResponseText =
-    !observerIsError &&
-    result?.terminate === true &&
-    typeof result.terminalResponse?.text === "string"
-      ? result.terminalResponse.text.trim()
-      : "";
-  if (terminalResponseText) {
-    ctx.state.terminalResponseText = terminalResponseText;
-  }
+  const observerIsError = captureToolExecutionTerminalResponse(ctx, evt);
   const sanitizedResult = sanitizeToolResult(result);
   const approvalUnavailable =
     isExecToolName(toolName) &&
@@ -1891,5 +1882,23 @@ export async function handleToolExecutionEnd(
         ctx.log.warn(`after_tool_call hook failed: tool=${toolName} error=${String(err)}`);
       });
   }
+}
+
+export function captureToolExecutionTerminalResponse(
+  ctx: ToolHandlerContext,
+  evt: Extract<AgentEvent, { type: "tool_execution_end" }>,
+): boolean {
+  const result = evt.result;
+  const observerIsError = evt.isError || isToolResultError(result);
+  const terminalResponseText =
+    !observerIsError &&
+    result?.terminate === true &&
+    typeof result.terminalResponse?.text === "string"
+      ? result.terminalResponse.text.trim()
+      : "";
+  if (terminalResponseText) {
+    ctx.state.terminalResponseText = terminalResponseText;
+  }
+  return observerIsError;
 }
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

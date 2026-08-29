@@ -16,6 +16,7 @@ import {
   resetPendingAssistantUsage,
 } from "./embedded-agent-subscribe.handlers.messages.js";
 import {
+  captureToolExecutionTerminalResponse,
   handleToolExecutionEnd,
   handleToolExecutionStart,
   handleToolExecutionUpdate,
@@ -121,6 +122,10 @@ export function createEmbeddedAgentSessionEventHandler(ctx: EmbeddedAgentSubscri
         });
         return;
       case "tool_execution_end":
+        // Terminal response capture must precede detached scheduling. Attempt
+        // settlement can otherwise snapshot the run before the async handler
+        // has copied the trusted result into run-local terminal state.
+        captureToolExecutionTerminalResponse(ctx, evt as never);
         scheduleEvent(
           evt,
           () => {

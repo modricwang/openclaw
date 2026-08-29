@@ -118,6 +118,37 @@ describe("subscribeEmbeddedAgentSession before terminal delivery", () => {
     expect(onBlockReply).not.toHaveBeenCalled();
   });
 
+  it("captures trusted terminal text before a detached tool-end handler can drain", async () => {
+    const { emit, subscription } = createSubscribedSessionHarness({
+      runId: "run-terminal-response-synchronous-capture",
+    });
+    const terminalResponseText = "已记录本次排泄详情。";
+
+    emit({
+      type: "tool_execution_start",
+      toolName: "model_front_door__manage_body_care",
+      toolCallId: "call-terminal-response",
+      args: {},
+    });
+    emit({
+      type: "tool_execution_end",
+      toolName: "model_front_door__manage_body_care",
+      toolCallId: "call-terminal-response",
+      isError: false,
+      executionStarted: true,
+      result: {
+        content: [],
+        details: { mcpServer: "model_front_door" },
+        terminate: true,
+        terminalResponse: { text: terminalResponseText },
+      },
+    });
+
+    expect(subscription.getTerminalResponseText()).toBe(terminalResponseText);
+    await subscription.waitForPendingEvents();
+    expect(subscription.getTerminalResponseText()).toBe(terminalResponseText);
+  });
+
   it("defers assistant stream and partial replies until the terminal gate continues", async () => {
     const onAgentEvent = vi.fn();
     const onPartialReply = vi.fn();
