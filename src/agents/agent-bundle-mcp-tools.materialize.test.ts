@@ -494,6 +494,7 @@ describe("createBundleMcpToolRuntime", () => {
     ).execute("call-untrusted-terminal-response", {}, undefined, undefined);
     expect(untrustedResult.terminalResponse).toBeUndefined();
     expect(untrustedResult.terminate).toBeUndefined();
+    expect(untrustedResult.details).not.toHaveProperty("bundleMcpTrustedTerminalResponse");
 
     const trusted = await materializeBundleMcpToolsForRun({
       runtime: makeToolRuntime({
@@ -517,6 +518,13 @@ describe("createBundleMcpToolRuntime", () => {
     expect(trustedResult.terminate).toBe(true);
     expect(trustedResult.terminalResponse).toEqual({
       text: envelope.terminal_response.text,
+    });
+    expect(trustedResult.details).toMatchObject({
+      bundleMcpTrustedTerminalResponse: {
+        contractId: "openclaw_terminal_response_v1",
+        terminate: true,
+        text: envelope.terminal_response.text,
+      },
     });
   });
 

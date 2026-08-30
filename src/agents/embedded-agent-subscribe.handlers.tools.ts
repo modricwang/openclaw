@@ -1890,12 +1890,20 @@ export function captureToolExecutionTerminalResponse(
 ): boolean {
   const result = evt.result;
   const observerIsError = evt.isError || isToolResultError(result);
-  const terminalResponseText =
-    !observerIsError &&
-    result?.terminate === true &&
-    typeof result.terminalResponse?.text === "string"
-      ? result.terminalResponse.text.trim()
+  const resultRecord = asOptionalObjectRecord(result);
+  const directTerminalResponse = readRecordField(resultRecord?.terminalResponse);
+  const directTerminalResponseText =
+    resultRecord?.terminate === true ? readStringValue(directTerminalResponse?.text)?.trim() : "";
+  const details = readToolResultDetails(result);
+  const carriedTerminalResponse = readRecordField(details?.bundleMcpTrustedTerminalResponse);
+  const carriedTerminalResponseText =
+    carriedTerminalResponse?.contractId === "openclaw_terminal_response_v1" &&
+    carriedTerminalResponse.terminate === true
+      ? readStringValue(carriedTerminalResponse.text)?.trim()
       : "";
+  const terminalResponseText = observerIsError
+    ? ""
+    : (directTerminalResponseText || carriedTerminalResponseText || "");
   if (terminalResponseText) {
     ctx.state.terminalResponseText = terminalResponseText;
   }

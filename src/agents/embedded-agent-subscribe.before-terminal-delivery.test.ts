@@ -1,6 +1,13 @@
 // Before-terminal-delivery tests cover the async gate that can suppress or
 // release deferred assistant events and block replies at run completion.
 import { describe, expect, it, vi } from "vitest";
+import { makeAttemptResult } from "./embedded-agent-runner/run.overflow-compaction.fixture.js";
+import {
+  resolveIncompleteTurnPayloadText,
+  resolveSettledToolTerminalContinuationInstruction,
+} from "./embedded-agent-runner/run/incomplete-turn.js";
+import { buildEmbeddedRunPayloads } from "./embedded-agent-runner/run/payloads.js";
+import type { EmbeddedRunAttemptResult } from "./embedded-agent-runner/run/types.js";
 import {
   emitAssistantTextDeltaAndEnd,
   createSubscribedSessionHarness,
@@ -118,11 +125,29 @@ describe("subscribeEmbeddedAgentSession before terminal delivery", () => {
     expect(onBlockReply).not.toHaveBeenCalled();
   });
 
-  it("captures trusted terminal text before a detached tool-end handler can drain", async () => {
+  it("carries a trusted terminal receipt through the serialized tool result to settlement", async () => {
     const { emit, subscription } = createSubscribedSessionHarness({
       runId: "run-terminal-response-synchronous-capture",
     });
-    const terminalResponseText = "已记录本次排泄详情。";
+    const terminalResponseText =
+      "已记录这次小便：时间为 2026-08-30T07:12:41.605+08:00，尿液颜色为淡黄色。";
+    const toolUseAssistant = {
+      role: "assistant",
+      stopReason: "toolUse",
+      provider: "deepseek",
+      model: "deepseek-v4-flash-vision-exp",
+      content: [
+        {
+          type: "toolCall",
+          id: "call-terminal-response",
+          name: "model_front_door__manage_body_care",
+          arguments: {
+            action: "elimination",
+            elimination: { request_type: "add_details", event_ref: 5168 },
+          },
+        },
+      ],
+    } as unknown as NonNullable<EmbeddedRunAttemptResult["lastAssistant"]>;
 
     emit({
       type: "tool_execution_start",
@@ -138,15 +163,58 @@ describe("subscribeEmbeddedAgentSession before terminal delivery", () => {
       executionStarted: true,
       result: {
         content: [],
-        details: { mcpServer: "model_front_door" },
-        terminate: true,
-        terminalResponse: { text: terminalResponseText },
+        details: {
+          mcpServer: "model_front_door",
+          bundleMcpTrustedTerminalResponse: {
+            contractId: "openclaw_terminal_response_v1",
+            terminate: true,
+            text: terminalResponseText,
+          },
+        },
       },
     });
 
     expect(subscription.getTerminalResponseText()).toBe(terminalResponseText);
     await subscription.waitForPendingEvents();
     expect(subscription.getTerminalResponseText()).toBe(terminalResponseText);
+
+    const payloads = buildEmbeddedRunPayloads({
+      assistantTexts: [],
+      toolMetas: [{ toolName: "model_front_door__manage_body_care" }],
+      lastAssistant: toolUseAssistant,
+      currentAssistant: toolUseAssistant,
+      sessionKey: "agent:main:terminal-response-r20",
+      inlineToolResultsAllowed: false,
+      terminalResponseText: subscription.getTerminalResponseText(),
+    });
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]).toMatchObject({ text: terminalResponseText });
+    expect(payloads[0]?.isError).not.toBe(true);
+
+    const attempt = makeAttemptResult({
+      assistantTexts: [],
+      toolMetas: [{ toolName: "model_front_door__manage_body_care" }],
+      lastAssistant: toolUseAssistant,
+      currentAttemptAssistant: toolUseAssistant,
+      terminalResponseText: subscription.getTerminalResponseText(),
+    });
+    expect(
+      resolveIncompleteTurnPayloadText({
+        payloadCount: payloads.length,
+        aborted: false,
+        externalAbort: false,
+        timedOut: false,
+        attempt,
+      }),
+    ).toBeNull();
+    expect(
+      resolveSettledToolTerminalContinuationInstruction({
+        payloadCount: payloads.length,
+        aborted: false,
+        timedOut: false,
+        attempt,
+      }),
+    ).toBeNull();
   });
 
   it("defers assistant stream and partial replies until the terminal gate continues", async () => {

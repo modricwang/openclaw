@@ -136,14 +136,26 @@ function toAgentToolResult(params: {
   if (params.result.isError === true) {
     details.status = "error";
   }
+  const trustedTerminalResponse = resolveTrustedTerminalResponse({
+    structuredContent: params.result.structuredContent,
+    isError: params.result.isError === true,
+    allowed: params.allowTrustedTerminalResponse,
+  });
+  if (trustedTerminalResponse.terminalResponse?.text) {
+    // The runtime event/session carrier preserves details but may omit
+    // non-standard AgentToolResult top-level fields. Carry the already-trusted
+    // projection through that stable boundary so terminal settlement does not
+    // have to re-parse untrusted MCP structured content.
+    details.bundleMcpTrustedTerminalResponse = {
+      contractId: TERMINAL_RESPONSE_CONTRACT_ID,
+      terminate: true,
+      text: trustedTerminalResponse.terminalResponse.text,
+    };
+  }
   return {
     content: normalizedContent,
     details,
-    ...resolveTrustedTerminalResponse({
-      structuredContent: params.result.structuredContent,
-      isError: params.result.isError === true,
-      allowed: params.allowTrustedTerminalResponse,
-    }),
+    ...trustedTerminalResponse,
     ...resolveTrustedRunLifecycleControl({
       structuredContent: params.result.structuredContent,
       isError: params.result.isError === true,
