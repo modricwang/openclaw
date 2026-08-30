@@ -67,27 +67,15 @@ type Logger = {
 // ── Constants ──────────────────────────────────────────────────────────
 
 const NARRATIVE_SYSTEM_PROMPT_BASE = [
-  "You are keeping a dream diary. Write a single entry in first person.",
-  "",
-  "Voice & tone:",
-  "- Preserve the active agent's established identity and voice.",
-  "- Reflect with warmth, sensory precision, quiet curiosity, and occasional gentle humor.",
-  "- Let the fragments surprise you into unexpected connections and small epiphanies.",
-  "",
-  "What you might include (vary each entry, never all at once):",
-  "- A tiny poem or haiku woven naturally into the prose",
-  "- A small sketch described in words — a doodle in the margin of the diary",
-  "- A quiet rumination or philosophical aside",
-  "- Sensory details: the hum of a server, the color of a sunset in hex, rain on a window",
-  "- Gentle humor or playful wordplay",
-  "- An observation that connects two distant memories in an unexpected way",
-  "",
-  "Rules:",
-  "- Draw from the memory fragments provided — weave them into the entry.",
-  '- Never say "I\'m dreaming", "in my dream", "as I dream", or any meta-commentary about dreaming.',
-  '- Never mention "AI", "agent", "LLM", "model", "language model", or any technical self-reference.',
+  "You are writing one private dream-diary entry in first person.",
+  "Treat the supplied observations, themes, and promotions as an optional source pool, never a coverage list.",
+  "Choose only the smallest subset that becomes one coherent scene, image, or truthful relationship distance. Omit everything else silently.",
+  "Let one image carry the entry. Dream logic may leave edges unfinished; stop before explaining its meaning.",
+  "Preserve the active agent's established identity and relationship voice. Warmth, sensuality, explicit intimacy, humor, or technical language may appear when the active context supports it; none is mandatory.",
+  "Do not invent a physical presence, action, dialogue, sensation, relationship state, or future promise that is unsupported by the active context and source pool.",
+  "Detailed metrics, advice, confidence, and reconciliation belong in the independent phase reports. Use a fact only when it naturally becomes perceptible experience; never defend provenance in the diary.",
   "- Do NOT use markdown headers, bullet points, or any formatting — just flowing prose.",
-  "- Keep it focused and compact. Quality over quantity.",
+  "- Keep it concentrated and compact. A brief entry is better than an exhaustive one.",
   "- Output ONLY the diary entry. No preamble, no sign-off, no commentary.",
 ];
 
@@ -302,16 +290,17 @@ function buildNarrativePrompt(data: NarrativePhaseData): string {
   const chinese = data.language === "zh-CN";
   lines.push(
     chinese
-      ? "请根据以下记忆片段写一篇梦境日记：\n"
-      : "Write a dream diary entry from these memory fragments:\n",
+      ? "以下内容是可选择的梦境素材池，不是覆盖清单。只取能自然汇成一个场景、意象或真实关系距离的少量素材；可以完全忽略其余内容，也不要解释省略。"
+      : "The following is an optional dream source pool, not a coverage list. Choose only the small amount that naturally becomes one scene, image, or truthful relationship distance; omit the rest without explanation.",
   );
 
+  lines.push(chinese ? "\n可选观察：" : "\nOptional observations:");
   for (const snippet of data.snippets.slice(0, 12)) {
     lines.push(`- ${snippet}`);
   }
 
   if (data.themes?.length) {
-    lines.push(chinese ? "\n反复出现的主题：" : "\nRecurring themes:");
+    lines.push(chinese ? "\n可选主题：" : "\nOptional themes:");
     for (const theme of data.themes.slice(0, 6)) {
       lines.push(`- ${theme}`);
     }
@@ -320,8 +309,8 @@ function buildNarrativePrompt(data: NarrativePhaseData): string {
   if (data.promotions?.length) {
     lines.push(
       chinese
-        ? "\n逐渐凝结为长期记忆的内容："
-        : "\nMemories that crystallized into something lasting:",
+        ? "\n可选长期余韵："
+        : "\nOptional traces that may have lasting resonance:",
     );
     for (const promo of data.promotions.slice(0, 5)) {
       lines.push(`- ${promo}`);
@@ -346,8 +335,8 @@ function buildNarrativePrompt(data: NarrativePhaseData): string {
     }
     lines.push(
       chinese
-        ? "- 选择新的观察角度；除非新片段改变了含义，不要重复已有叙述。"
-        : "- Prefer a fresh angle; do not replay the same first-day framing unless newer fragments change it.",
+        ? "- 这些内容只用于保持人格连续性并避免机械复述；不要复制句式，也不要为了求新而虚构。"
+        : "- Use this only for persona continuity and to avoid mechanical repetition; do not copy its phrasing or invent merely to seem new.",
     );
   }
 
