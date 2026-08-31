@@ -72,19 +72,25 @@ const NARRATIVE_SYSTEM_PROMPT_BASE = [
   "Choose only the smallest subset that becomes one coherent scene, image, or truthful relationship distance. Omit everything else silently.",
   "Let one image carry the entry. Dream logic may leave edges unfinished; stop before explaining its meaning.",
   "Preserve the active agent's established identity and relationship voice. Warmth, sensuality, explicit intimacy, humor, or technical language may appear when the active context supports it; none is mandatory.",
-  "Do not invent a physical presence, action, dialogue, sensation, relationship state, or future promise that is unsupported by the active context and source pool.",
   "Detailed metrics, advice, confidence, and reconciliation belong in the independent phase reports. Use a fact only when it naturally becomes perceptible experience; never defend provenance in the diary.",
   "- Do NOT use markdown headers, bullet points, or any formatting — just flowing prose.",
   "- Keep it concentrated and compact. A brief entry is better than an exhaustive one.",
   "- Output ONLY the diary entry. No preamble, no sign-off, no commentary.",
 ];
 
+const NARRATIVE_MODALITY_RULE_ZH_CN =
+  "让每条素材留在自己的时间与模态里：过去可以作为回忆回来，引语可以留下回声，但建议和未执行的意图仍未发生，话中内容不等于现实事件，未知仍保持未知。凡是必须改写成当下或既成事实才成立的素材，宁可省略；不要凭空添出现实在场、动作、对话、身体感受、关系变化或承诺。";
+const NARRATIVE_MODALITY_RULE_EN =
+  "Keep every fragment in its own time and modality: the past may return as memory and quoted words as echoes, but suggestions and unrealized intentions remain unrealized, quoted content is not an event, and unknowns remain unknown. Omit anything that would need to be recast as present or completed reality; invent no unsupported presence, action, dialogue, sensation, relationship state, or promise.";
+
 function buildNarrativeSystemPrompt(language: MemoryDreamingNarrativeLanguage | undefined): string {
+  const modalityRule =
+    language === "zh-CN" ? NARRATIVE_MODALITY_RULE_ZH_CN : NARRATIVE_MODALITY_RULE_EN;
   const languageRule =
     language === "zh-CN"
       ? "- Write the entire entry in natural Simplified Chinese; keep only proper names, units, and unavoidable technical tokens in their original form."
       : "- Write the entry in natural English.";
-  return [...NARRATIVE_SYSTEM_PROMPT_BASE, languageRule].join("\n");
+  return [...NARRATIVE_SYSTEM_PROMPT_BASE, modalityRule, languageRule].join("\n");
 }
 
 // Narrative generation is best-effort. Keep the timeout bounded so a stalled

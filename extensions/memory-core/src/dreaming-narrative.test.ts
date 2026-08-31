@@ -436,6 +436,8 @@ describe("generateAndAppendDreamNarrative", () => {
     expect(runOptions.lightContext).toBe(true);
     expect(runOptions.deliver).toBe(false);
     expect(runOptions.model).toBe("anthropic/claude-sonnet-4-6");
+    expect(runOptions.extraSystemPrompt).toContain("Keep every fragment in its own time and modality");
+    expect(runOptions.extraSystemPrompt).not.toContain("让每条素材留在自己的时间与模态里");
     expect(subagent.waitForRun).toHaveBeenCalledOnce();
     expect(subagent.deleteSession).toHaveBeenCalledTimes(2);
 
@@ -454,7 +456,11 @@ describe("generateAndAppendDreamNarrative", () => {
       workspaceDir,
       data: {
         phase: "sweep",
-        snippets: ["卧室偏热，雨十五分钟后到。", "晚餐记录里有几项完整的营养数据。"],
+        snippets: [
+          "卧室偏热，雨十五分钟后到。",
+          "Garmin 压力 71 是历史快照，当前状态未知。",
+          "曾经建议调凉空调，但未确认执行。",
+        ],
         themes: ["夜里逐渐安静下来"],
         promotions: ["主人更喜欢有留白的夜间私语"],
         currentDate: "2026-08-29",
@@ -471,6 +477,8 @@ describe("generateAndAppendDreamNarrative", () => {
     expect(runOptions.extraSystemPrompt).toContain("natural Simplified Chinese");
     expect(runOptions.extraSystemPrompt).toContain("optional source pool, never a coverage list");
     expect(runOptions.extraSystemPrompt).toContain("Omit everything else silently");
+    expect(runOptions.extraSystemPrompt).toContain("让每条素材留在自己的时间与模态里");
+    expect(runOptions.extraSystemPrompt).not.toContain("Keep every fragment in its own time and modality");
     expect(runOptions.extraSystemPrompt).not.toContain("tiny poem or haiku");
     expect(runOptions.message).toContain("以下内容是可选择的梦境素材池，不是覆盖清单");
     expect(runOptions.message).toContain("可以完全忽略其余内容，也不要解释省略");
@@ -478,7 +486,8 @@ describe("generateAndAppendDreamNarrative", () => {
     expect(runOptions.message).toContain("可选主题：");
     expect(runOptions.message).toContain("可选长期余韵：");
     expect(runOptions.message).toContain("只用于保持人格连续性并避免机械复述");
-    expect(runOptions.message).toContain("晚餐记录里有几项完整的营养数据。");
+    expect(runOptions.message).toContain("Garmin 压力 71 是历史快照，当前状态未知。");
+    expect(runOptions.message).toContain("曾经建议调凉空调，但未确认执行。");
     const content = await fs.readFile(path.join(workspaceDir, "DREAMS.md"), "utf-8");
     expect(content).toContain("2026年8月29日");
     expect(content).toContain("雨快落下时");
