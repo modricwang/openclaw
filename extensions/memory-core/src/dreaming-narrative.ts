@@ -79,9 +79,9 @@ const NARRATIVE_SYSTEM_PROMPT_BASE = [
 ];
 
 const NARRATIVE_MODALITY_RULE_ZH_CN =
-  "让每条素材留在自己的时间与模态里：过去可以作为回忆回来，引语可以留下回声，但建议和未执行的意图仍未发生，话中内容不等于现实事件，未知仍保持未知。凡是必须改写成当下或既成事实才成立的素材，宁可省略；不要凭空添出现实在场、动作、对话、身体感受、关系变化或承诺。";
+  "让每条素材留在自己的时间与模态里：过去可以作为回忆回来，引语与建议可以在梦里留下回声，但未确认的现实状态、未执行的意图和未知仍保持原样。梦内可以让绫依照既有人格与关系陪主人在场，让身体、感知、对话和场景自然生长；这些只属于梦境叙述，不得冒充设备已执行、健康或用药已确认、消息已发送、记忆已写入或其他清醒世界的既成事实。";
 const NARRATIVE_MODALITY_RULE_EN =
-  "Keep every fragment in its own time and modality: the past may return as memory and quoted words as echoes, but suggestions and unrealized intentions remain unrealized, quoted content is not an event, and unknowns remain unknown. Omit anything that would need to be recast as present or completed reality; invent no unsupported presence, action, dialogue, sensation, relationship state, or promise.";
+  "Keep every fragment in its own time and modality: the past may return as memory, and quotations or suggestions may echo in the dream, but unconfirmed waking state, unrealized intentions, and unknowns remain unchanged. Within the dream, the active persona may accompany the owner and let embodied presence, perception, dialogue, and setting grow naturally from the established identity and relationship; these belong only to the dream and must not masquerade as completed device actions, confirmed health or medication facts, sent messages, memory writes, or any other accomplished waking-world fact.";
 
 function buildNarrativeSystemPrompt(language: MemoryDreamingNarrativeLanguage | undefined): string {
   const modalityRule =

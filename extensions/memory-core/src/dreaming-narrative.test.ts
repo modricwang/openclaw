@@ -437,6 +437,12 @@ describe("generateAndAppendDreamNarrative", () => {
     expect(runOptions.deliver).toBe(false);
     expect(runOptions.model).toBe("anthropic/claude-sonnet-4-6");
     expect(runOptions.extraSystemPrompt).toContain("Keep every fragment in its own time and modality");
+    expect(runOptions.extraSystemPrompt).toContain(
+      "embodied presence, perception, dialogue, and setting grow naturally",
+    );
+    expect(runOptions.extraSystemPrompt).toContain(
+      "must not masquerade as completed device actions",
+    );
     expect(runOptions.extraSystemPrompt).not.toContain("让每条素材留在自己的时间与模态里");
     expect(subagent.waitForRun).toHaveBeenCalledOnce();
     expect(subagent.deleteSession).toHaveBeenCalledTimes(2);
@@ -478,6 +484,9 @@ describe("generateAndAppendDreamNarrative", () => {
     expect(runOptions.extraSystemPrompt).toContain("optional source pool, never a coverage list");
     expect(runOptions.extraSystemPrompt).toContain("Omit everything else silently");
     expect(runOptions.extraSystemPrompt).toContain("让每条素材留在自己的时间与模态里");
+    expect(runOptions.extraSystemPrompt).toContain("让身体、感知、对话和场景自然生长");
+    expect(runOptions.extraSystemPrompt).toContain("不得冒充设备已执行、健康或用药已确认");
+    expect(runOptions.extraSystemPrompt).not.toContain("不要凭空添出现实在场");
     expect(runOptions.extraSystemPrompt).not.toContain("Keep every fragment in its own time and modality");
     expect(runOptions.extraSystemPrompt).not.toContain("tiny poem or haiku");
     expect(runOptions.message).toContain("以下内容是可选择的梦境素材池，不是覆盖清单");
