@@ -49,6 +49,7 @@ export function finalizeEmbeddedAttempt(
     emptyAssistantReplyIsSilent: params.emptyAssistantReplyIsSilent,
     lastAssistantStopReason: result.lastAssistant?.stopReason,
     hasTerminalOutput: params.hasTerminalOutput,
+    terminalResponseText: result.terminalResponseText,
   });
   const promptError = terminalState.promptError
     ? formatErrorMessage(terminalState.promptError)

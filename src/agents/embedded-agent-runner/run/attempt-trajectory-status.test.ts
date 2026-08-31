@@ -87,6 +87,17 @@ describe("attempt trajectory status", () => {
     ).toEqual({ status: "success" });
   });
 
+  it("keeps a Host-trusted terminal receipt deliverable after a tool-use stop", () => {
+    expect(
+      resolveAttemptTrajectoryTerminal(
+        baseParams({
+          lastAssistantStopReason: "toolUse",
+          terminalResponseText: "已记录本次排泄详情。",
+        }),
+      ),
+    ).toEqual({ status: "success" });
+  });
+
   it("keeps committed messaging tool delivery as success even without assistant text", () => {
     expect(
       resolveAttemptTrajectoryTerminal(

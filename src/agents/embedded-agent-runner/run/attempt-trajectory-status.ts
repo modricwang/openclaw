@@ -45,6 +45,8 @@ type ResolveAttemptTrajectoryTerminalParams = {
   emptyAssistantReplyIsSilent?: boolean;
   lastAssistantStopReason?: string;
   hasTerminalOutput?: boolean;
+  /** Exact Host-trusted terminal receipt text captured without another model turn. */
+  terminalResponseText?: string;
 };
 
 /**
@@ -111,7 +113,10 @@ export function resolveAttemptTrajectoryTerminal(
   // Messaging/tool-use attempts may not have assistant text; only committed
   // delivery evidence or durable side effects can make those terminal turns
   // successful.
+  const hasTrustedTerminalResponse =
+    typeof params.terminalResponseText === "string" && params.terminalResponseText.trim().length > 0;
   const hasExplicitTerminalDelivery =
+    hasTrustedTerminalResponse ||
     params.silentExpected === true ||
     params.emptyAssistantReplyIsSilent === true ||
     params.didSendDeterministicApprovalPrompt ||
